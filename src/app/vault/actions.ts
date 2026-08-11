@@ -8,6 +8,13 @@ import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024 // 20MB
+const MAX_EXTRACTED_TEXT_CHARS = 2_000_000 // ~generous for a large real OM; blocks decompression-bomb-style PDFs
+const MAX_CHUNKS_PER_DOCUMENT = 500 // caps the single Voyage embedding batch and the ingestion cost per upload
+
+function sanitizeFilename(name: string): string {
+  // Untrusted input: strip path separators and control characters before it becomes part of a storage key.
+  return name.replace(/[/\\]/g, '_').replace(/[\x00-\x1f]/g, '').slice(0, 200) || 'upload'
+}
 
 export async function uploadDocument(formData: FormData) {
   const supabase = await createClient()
@@ -29,9 +36,13 @@ export async function uploadDocument(formData: FormData) {
     throw new Error('Only PDF and plain text files are supported')
   }
 
-  const storagePath = `${user.id}/${randomUUID()}-${file.name}`
+  const safeName = sanitizeFilename(file.name)
+  const storagePath = `${user.id}/${randomUUID()}-${safeName}`
   const { error: uploadError } = await supabase.storage.from('documents').upload(storagePath, file)
-  if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`)
+  if (uploadError) {
+    console.error('Vault upload failed:', uploadError)
+    throw new Error('Upload failed. Please try again.')
+  }
 
   const { data: documentRow, error: insertError } = await supabase
     .from('documents')
@@ -45,14 +56,22 @@ export async function uploadDocument(formData: FormData) {
     .select('id')
     .single()
   if (insertError || !documentRow) {
-    throw new Error(`Failed to record document: ${insertError?.message}`)
+    console.error('Failed to record document:', insertError)
+    throw new Error('Could not save this document. Please try again.')
   }
 
   try {
     const text = await extractTextFromFile(file)
+    if (text.length > MAX_EXTRACTED_TEXT_CHARS) {
+      throw new Error('This document is too large to process (extracted text exceeds the v1 limit).')
+    }
+
     const chunks = chunkText(text)
     if (chunks.length === 0) {
       throw new Error('No extractable text found in this file')
+    }
+    if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
+      throw new Error('This document is too large to process (too many sections for v1).')
     }
 
     const embeddings = await embedTexts(chunks, 'document')
@@ -66,10 +85,14 @@ export async function uploadDocument(formData: FormData) {
         embedding: embeddings[i],
       }))
     )
-    if (chunksError) throw new Error(`Failed to store chunks: ${chunksError.message}`)
+    if (chunksError) {
+      console.error('Failed to store document chunks:', chunksError)
+      throw new Error('Could not process this document. Please try again.')
+    }
 
     await supabase.from('documents').update({ status: 'ready' }).eq('id', documentRow.id)
   } catch (err) {
+    console.error('Ingestion failed for document', documentRow.id, err)
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentRow.id)
     throw err
   }
