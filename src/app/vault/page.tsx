@@ -1,6 +1,18 @@
 import { createClient } from '@/lib/supabase/server'
 import { uploadDocument } from './actions'
 
+const STATUS_LABEL: Record<string, string> = {
+  ready: 'Ready to search',
+  processing: 'Processing',
+  failed: 'Failed',
+}
+
+const STATUS_DOT: Record<string, string> = {
+  ready: 'bg-forest',
+  processing: 'bg-slate',
+  failed: 'bg-brick',
+}
+
 export default async function VaultPage() {
   const supabase = await createClient()
   const { data: documents } = await supabase
@@ -12,38 +24,85 @@ export default async function VaultPage() {
   const readyCount = documents?.filter((d) => d.status === 'ready').length ?? 0
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 p-6">
-      <h1 className="text-xl font-semibold">Vault</h1>
-      <div className="flex gap-6 text-sm text-gray-600">
-        <span>{docCount} documents</span>
-        <span>{readyCount} ready to search</span>
+    <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
+      <div className="flex flex-col gap-1">
+        <span className="font-mono text-xs uppercase tracking-widest text-slate">Vault</span>
+        <h1 className="font-display text-3xl font-medium tracking-tight">Your documents</h1>
       </div>
 
-      <form action={uploadDocument} className="flex items-center gap-2">
-        <input type="file" name="file" accept=".pdf,.txt" required className="text-sm" />
-        <button type="submit" className="rounded bg-black px-4 py-2 text-sm text-white">
-          Upload
-        </button>
+      <div className="flex gap-4">
+        <div className="flex-1 rounded-md border border-hairline px-4 py-3">
+          <div className="font-mono text-2xl tabular-nums">{docCount}</div>
+          <div className="text-xs text-slate">documents uploaded</div>
+        </div>
+        <div className="flex-1 rounded-md border border-hairline px-4 py-3">
+          <div className="font-mono text-2xl tabular-nums text-forest">{readyCount}</div>
+          <div className="text-xs text-slate">ready to search</div>
+        </div>
+      </div>
+
+      <form
+        action={uploadDocument}
+        className="flex flex-col items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8 text-center"
+      >
+        <p className="text-sm text-slate">Add a PDF or plain text file to your vault.</p>
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            name="file"
+            accept=".pdf,.txt"
+            required
+            className="text-sm text-slate file:mr-3 file:rounded-md file:border file:border-hairline file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-ink hover:file:border-forest"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest"
+          >
+            Upload
+          </button>
+        </div>
       </form>
 
-      <table className="w-full text-left text-sm">
-        <thead>
-          <tr className="border-b">
-            <th className="py-2">File</th>
-            <th className="py-2">Status</th>
-            <th className="py-2">Uploaded</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(documents ?? []).map((doc) => (
-            <tr key={doc.id} className="border-b">
-              <td className="py-2">{doc.file_name}</td>
-              <td className="py-2">{doc.status}</td>
-              <td className="py-2">{new Date(doc.created_at).toLocaleString()}</td>
+      {docCount === 0 ? (
+        <p className="text-sm text-slate">
+          No documents yet. Upload your first file above to start building your vault.
+        </p>
+      ) : (
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-hairline">
+              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">
+                File
+              </th>
+              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">
+                Status
+              </th>
+              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">
+                Uploaded
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {(documents ?? []).map((doc) => (
+              <tr key={doc.id} className="border-b border-hairline">
+                <td className="py-3">{doc.file_name}</td>
+                <td className="py-3">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-slate">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[doc.status] ?? 'bg-slate'}`}
+                      aria-hidden="true"
+                    />
+                    {STATUS_LABEL[doc.status] ?? doc.status}
+                  </span>
+                </td>
+                <td className="py-3 font-mono text-xs tabular-nums text-slate">
+                  {new Date(doc.created_at).toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }
