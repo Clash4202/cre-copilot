@@ -7,7 +7,7 @@ import { extractTextFromFile } from '@/lib/parse'
 import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
 
-const MAX_FILE_BYTES = 20 * 1024 * 1024 // 20MB
+const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB
 const MAX_EXTRACTED_TEXT_CHARS = 2_000_000 // ~generous for a large real OM; blocks decompression-bomb-style PDFs
 const MAX_CHUNKS_PER_DOCUMENT = 500 // caps the single Voyage embedding batch and the ingestion cost per upload
 
@@ -28,7 +28,7 @@ export async function uploadDocument(formData: FormData) {
     throw new Error('No file provided')
   }
   if (file.size > MAX_FILE_BYTES) {
-    throw new Error('File is too large (max 20MB)')
+    throw new Error('File is too large (max 50MB)')
   }
   const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
   const isText = file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')

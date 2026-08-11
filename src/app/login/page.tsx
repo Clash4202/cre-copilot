@@ -1,9 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { sendMagicLink } from './actions'
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const linkExpired = searchParams.get('error') === 'invalid_link'
   const [email, setEmail] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
 
@@ -37,6 +48,12 @@ export default function LoginPage() {
         <p className="text-sm text-slate">
           Enter your email and we&apos;ll send you a link to sign in — no password to remember.
         </p>
+        {linkExpired && (
+          <p className="rounded-md border border-brick/30 bg-brick/5 px-3 py-2 text-sm text-brick">
+            That link didn&apos;t work — it may have expired or already been used. Request a new
+            one below.
+          </p>
+        )}
         <label className="flex flex-col gap-1.5">
           <span className="font-mono text-xs uppercase tracking-widest text-slate">Email</span>
           <input
