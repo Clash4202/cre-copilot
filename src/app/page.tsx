@@ -5,6 +5,7 @@ import { Hero } from '@/components/landing/hero'
 import { ExampleAnswer } from '@/components/landing/example-answer'
 import { HowItWorks } from '@/components/landing/how-it-works'
 import { WhatsComing } from '@/components/landing/whats-coming'
+import { FAQ } from '@/components/landing/faq'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -23,6 +24,7 @@ export default async function HomePage() {
       <ExampleAnswer />
       <HowItWorks />
       <WhatsComing />
+      <FAQ />
     </>
   )
 }
