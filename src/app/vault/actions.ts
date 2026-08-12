@@ -111,10 +111,14 @@ export async function uploadDocument(formData: FormData) {
       throw new Error('Could not process this document. Please try again.')
     }
 
-    await supabase
+    const { error: readyError } = await supabase
       .from('documents')
       .update({ status: 'ready', ocr_page_count: ocrPageCount })
       .eq('id', documentRow.id)
+    if (readyError) {
+      console.error('Failed to mark document ready:', readyError)
+      throw new Error('Could not finish processing this document. Please try again.')
+    }
   } catch (err) {
     console.error('Ingestion failed for document', documentRow.id, err)
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentRow.id)
