@@ -6,6 +6,10 @@ export function isPageScanned(pageText: string): boolean {
   return pageText.replace(/\s/g, '').length < OCR_TEXT_THRESHOLD
 }
 
+export function spliceOcrPages(pages: string[], ocrPages: string[]): string[] {
+  return pages.map((pageText, i) => (isPageScanned(pageText) ? ocrPages[i] : pageText))
+}
+
 export async function extractPdfPages(buffer: Uint8Array): Promise<string[]> {
   const pdf = await getDocumentProxy(buffer)
   const { text } = await extractText(pdf, { mergePages: false })

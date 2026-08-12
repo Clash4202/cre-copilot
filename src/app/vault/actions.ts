@@ -3,7 +3,7 @@
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { extractTextFromFile, extractPdfPages, isPageScanned } from '@/lib/parse'
+import { extractTextFromFile, extractPdfPages, isPageScanned, spliceOcrPages } from '@/lib/parse'
 import { exceedsOcrLimits, transcribeScannedPdf } from '@/lib/ocr'
 import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
@@ -76,7 +76,7 @@ export async function uploadDocument(formData: FormData) {
           throw new Error(limitError)
         }
         const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
-        const splicedPages = pages.map((pageText, i) => (isPageScanned(pageText) ? ocrPages[i] : pageText))
+        const splicedPages = spliceOcrPages(pages, ocrPages)
         text = splicedPages.join('\n\n')
       } else {
         text = pages.join('\n\n')

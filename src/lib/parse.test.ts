@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { extractTextFromFile, isPageScanned, OCR_TEXT_THRESHOLD } from './parse'
+import { extractTextFromFile, isPageScanned, spliceOcrPages, OCR_TEXT_THRESHOLD } from './parse'
 
 describe('extractTextFromFile', () => {
   it('reads plain text files directly', async () => {
@@ -40,5 +40,36 @@ describe('isPageScanned', () => {
     expect(isPageScanned(mostlyWhitespace)).toBe(false)
     const paddedButEmpty = ' '.repeat(OCR_TEXT_THRESHOLD + 1000)
     expect(isPageScanned(paddedButEmpty)).toBe(true)
+  })
+})
+
+describe('spliceOcrPages', () => {
+  const cleanText = 'x'.repeat(OCR_TEXT_THRESHOLD) // not scanned
+  const scannedText = 'x'.repeat(OCR_TEXT_THRESHOLD - 1) // scanned
+
+  it('only substitutes the OCR value at the index of the scanned page, leaving clean pages untouched', () => {
+    const pages = [cleanText, scannedText, cleanText]
+    const ocrPages = ['OCR of page 0', 'OCR of page 1', 'OCR of page 2']
+
+    const result = spliceOcrPages(pages, ocrPages)
+
+    expect(result).toEqual([cleanText, 'OCR of page 1', cleanText])
+    expect(result[1]).toBe('OCR of page 1')
+    expect(result).not.toContain('OCR of page 0')
+    expect(result).not.toContain('OCR of page 2')
+  })
+
+  it('leaves the pages array unchanged when no page is scanned', () => {
+    const pages = [cleanText, cleanText, cleanText]
+    const ocrPages = ['OCR of page 0', 'OCR of page 1', 'OCR of page 2']
+
+    expect(spliceOcrPages(pages, ocrPages)).toEqual(pages)
+  })
+
+  it('returns the OCR pages exactly when every page is scanned', () => {
+    const pages = [scannedText, scannedText, scannedText]
+    const ocrPages = ['OCR of page 0', 'OCR of page 1', 'OCR of page 2']
+
+    expect(spliceOcrPages(pages, ocrPages)).toEqual(ocrPages)
   })
 })
