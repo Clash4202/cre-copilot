@@ -91,9 +91,9 @@ export default async function VaultPage() {
                     {doc.ocr_page_count > 0 && (
                       <span
                         className="rounded-full border border-wine/30 px-1.5 py-0.5 font-mono text-[10px] text-wine"
-                        title={`${doc.ocr_page_count} page${doc.ocr_page_count === 1 ? '' : 's'} were image-only and transcribed by AI OCR — double-check exact figures on ${doc.ocr_page_count === 1 ? 'it' : 'them'}.`}
+                        title={`This PDF had ${doc.ocr_page_count} image-only page${doc.ocr_page_count === 1 ? '' : 's'}, so the whole document was transcribed by AI. Double-check exact figures against the original.`}
                       >
-                        {doc.ocr_page_count} page{doc.ocr_page_count === 1 ? '' : 's'} OCR&apos;d
+                        AI-transcribed
                       </span>
                     )}
                   </span>
