@@ -8,6 +8,7 @@ import { WhatsComing } from '@/components/landing/whats-coming'
 import { FAQ } from '@/components/landing/faq'
 import { ClosingCTA } from '@/components/landing/closing-cta'
 import { DemoForm } from '@/components/landing/demo-form'
+import { SiteFooter } from '@/components/landing/site-footer'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -29,6 +30,7 @@ export default async function HomePage() {
       <FAQ />
       <ClosingCTA />
       <DemoForm />
+      <SiteFooter />
     </>
   )
 }
