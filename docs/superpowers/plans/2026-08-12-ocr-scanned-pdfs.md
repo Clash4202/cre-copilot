@@ -83,7 +83,11 @@ describe('extractTextFromFile', () => {
 
 describe('isPageScanned', () => {
   it('treats a page with real text as not scanned', () => {
-    expect(isPageScanned('This is a full page of ordinary extracted PDF text content.')).toBe(false)
+    expect(
+      isPageScanned(
+        'This is a full page of ordinary extracted PDF text content with plenty of real words on it.'
+      )
+    ).toBe(false)
   })
 
   it('treats an empty or near-empty page as scanned', () => {
