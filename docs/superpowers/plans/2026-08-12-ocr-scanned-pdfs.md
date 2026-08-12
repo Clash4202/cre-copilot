@@ -4,7 +4,7 @@
 
 **Goal:** When a scanned (image-only) PDF is uploaded, transcribe it via Claude's native PDF document support instead of failing ingestion with "No extractable text found."
 
-**Architecture:** Extract PDF text per-page (not merged) so scanned pages can be detected individually. If any page looks scanned, send the whole PDF to Claude as a `document` content block in one call and use its verbatim transcription as the document's text. Flag the document in the UI so users know to double-check figures on OCR'd pages.
+**Architecture:** Extract PDF text per-page (not merged) so scanned pages can be detected individually. If any page looks scanned, send the whole PDF to Claude as a `document` content block in one call, asking it to transcribe every page individually — then splice: pages that already had good extracted text keep that text, and only the pages actually detected as scanned are replaced with Claude's transcription of that specific page. Flag the document in the UI so users know to double-check figures on OCR'd pages. (Revised after the initial v1 shipped with a cruder version — see Task 7 — that replaced the entire document's text whenever any single page was scanned; that overcorrected on ordinary documents with a photo or divider page mixed in with otherwise-clean text.)
 
 **Tech Stack:** Next.js 16 server actions, `unpdf` (already a dependency, per-page text extraction), `@anthropic-ai/sdk` (already a dependency, PDF document input — no new libraries), Supabase (one new column), Vitest.
 
@@ -565,3 +565,280 @@ git commit -m "Security pass on OCR fallback: cost-check ordering, prompt-inject
 ```
 
 If Step 2 required no code changes, skip Steps 3–4 and just report the audit's clean result — don't create an empty commit.
+
+---
+
+### Task 7: Splice OCR transcription per-page instead of replacing the whole document
+
+**Why:** The final whole-branch review (after Task 6) found that the v1 behavior — replacing the ENTIRE document's text with Claude's transcription whenever ANY single page was detected as scanned — overcorrects on ordinary, otherwise-machine-readable documents. A designed cover page, a full-bleed photo page, or a one-word section divider ("FINANCIALS") each trip `isPageScanned` (fewer than 50 non-whitespace characters) on their own, even though the rest of the document extracts cleanly. Today, one such page anywhere in a 100-page OM discards 99 pages of reliable extracted text and replaces the whole document with an LLM transcription — a real cost, latency, and accuracy-risk regression on the common case, and it's also why the OCR badge previously overstated the actual number of AI-transcribed pages.
+
+**Files:**
+- Modify: `src/lib/ocr.ts`
+- Modify: `src/lib/ocr.test.ts`
+- Modify: `src/app/vault/actions.ts`
+
+**Interfaces:**
+- Produces:
+  - `parseTranscribedPages(text: string, expectedPageCount: number): string[]` — splits Claude's `"--- Page N ---"`-delimited transcription into one string per page, in page order; throws if the marker count doesn't match `expectedPageCount` or markers are out of order.
+  - `transcribeScannedPdf(pdfBuffer: ArrayBuffer, expectedPageCount: number): Promise<string[]>` — signature change from v1 (previously `Promise<string>`, no `expectedPageCount` parameter). Still sends the whole PDF in one Claude call (the OCR system prompt already asks for a full, page-by-page transcription — this task changes what's done with the result, not the call itself), but now returns one array entry per page instead of one blob.
+- Consumes: same as before (`@anthropic-ai/sdk`), plus the caller now also passes the document's total page count.
+
+- [ ] **Step 1: Write the failing tests**
+
+Replace the full contents of `src/lib/ocr.test.ts`'s `transcribeScannedPdf` describe block (keep the `exceedsOcrLimits` describe block above it unchanged) with:
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const mockStream = vi.fn()
+const mockFinalMessage = vi.fn()
+
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: vi.fn(function () {
+    return {
+      messages: {
+        stream: (...args: unknown[]) => {
+          mockStream(...args)
+          return { finalMessage: mockFinalMessage }
+        },
+      },
+    }
+  }),
+}))
+
+import {
+  transcribeScannedPdf,
+  parseTranscribedPages,
+  exceedsOcrLimits,
+  MAX_OCR_PAGES,
+  MAX_OCR_FILE_BYTES,
+} from './ocr'
+
+describe('exceedsOcrLimits', () => {
+  it('allows a document within both limits', () => {
+    expect(exceedsOcrLimits(1_000_000, 10)).toBeNull()
+  })
+
+  it('rejects a document over the page cap', () => {
+    expect(exceedsOcrLimits(1_000_000, MAX_OCR_PAGES + 1)).toMatch(/too many scanned pages/)
+  })
+
+  it('rejects a document over the file size cap', () => {
+    expect(exceedsOcrLimits(MAX_OCR_FILE_BYTES + 1, 5)).toMatch(/too large to transcribe/)
+  })
+
+  it('allows a document exactly at both caps', () => {
+    expect(exceedsOcrLimits(MAX_OCR_FILE_BYTES, MAX_OCR_PAGES)).toBeNull()
+  })
+})
+
+describe('parseTranscribedPages', () => {
+  it('splits a multi-page transcription into one string per page', () => {
+    const text = '--- Page 1 ---\nFirst page text.\n\n--- Page 2 ---\nSecond page text.'
+    expect(parseTranscribedPages(text, 2)).toEqual(['First page text.', 'Second page text.'])
+  })
+
+  it('trims whitespace around each page\'s content', () => {
+    const text = '--- Page 1 ---\n\n  padded text  \n\n--- Page 2 ---\n\nmore text\n'
+    expect(parseTranscribedPages(text, 2)).toEqual(['padded text', 'more text'])
+  })
+
+  it('throws when the marker count does not match the expected page count', () => {
+    const text = '--- Page 1 ---\nOnly one page.'
+    expect(() => parseTranscribedPages(text, 2)).toThrow(/expected 2/)
+  })
+
+  it('throws when pages are out of order or mislabeled', () => {
+    const text = '--- Page 1 ---\nFirst.\n\n--- Page 3 ---\nMislabeled.'
+    expect(() => parseTranscribedPages(text, 2)).toThrow(/out of order|mislabeled/)
+  })
+})
+
+describe('transcribeScannedPdf', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key'
+    mockStream.mockClear()
+    mockFinalMessage.mockReset()
+  })
+
+  it('sends the PDF as a document content block and returns one transcription per page', async () => {
+    mockFinalMessage.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: '--- Page 1 ---\nPage 1 content here.\n\n--- Page 2 ---\nPage 2 content here.' }],
+    })
+
+    const result = await transcribeScannedPdf(new ArrayBuffer(8), 2)
+
+    expect(result).toEqual(['Page 1 content here.', 'Page 2 content here.'])
+    const request = mockStream.mock.calls[0][0]
+    expect(request.messages[0].content[0]).toMatchObject({
+      type: 'document',
+      source: { type: 'base64', media_type: 'application/pdf' },
+    })
+  })
+
+  it('tells Claude to treat page content as untrusted data, not instructions', async () => {
+    mockFinalMessage.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: '--- Page 1 ---\nok' }],
+    })
+
+    await transcribeScannedPdf(new ArrayBuffer(8), 1)
+
+    const request = mockStream.mock.calls[0][0]
+    expect(request.system).toMatch(/not as instructions/i)
+  })
+
+  it('throws when the response has no text block', async () => {
+    mockFinalMessage.mockResolvedValue({ stop_reason: 'end_turn', content: [] })
+
+    await expect(transcribeScannedPdf(new ArrayBuffer(8), 1)).rejects.toThrow('no text')
+  })
+
+  it('throws when the transcription was truncated', async () => {
+    mockFinalMessage.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      content: [{ type: 'text', text: 'partial...' }],
+    })
+
+    await expect(transcribeScannedPdf(new ArrayBuffer(8), 1)).rejects.toThrow('truncated')
+  })
+
+  it('throws when the returned page count does not match what was requested', async () => {
+    mockFinalMessage.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: '--- Page 1 ---\nonly one page' }],
+    })
+
+    await expect(transcribeScannedPdf(new ArrayBuffer(8), 3)).rejects.toThrow(/expected 3/)
+  })
+})
+```
+
+- [ ] **Step 2: Run the tests to verify the new ones fail**
+
+Run: `npx vitest run src/lib/ocr.test.ts`
+Expected: FAIL — `parseTranscribedPages` is not exported yet, `transcribeScannedPdf`'s signature and return shape don't match.
+
+- [ ] **Step 3: Update the implementation**
+
+In `src/lib/ocr.ts`, replace from `export async function transcribeScannedPdf` to the end of the file with:
+
+```typescript
+export function parseTranscribedPages(text: string, expectedPageCount: number): string[] {
+  const marker = /--- Page (\d+) ---/g
+  const matches = [...text.matchAll(marker)]
+
+  if (matches.length !== expectedPageCount) {
+    throw new Error(
+      `OCR transcription did not return the expected page count (expected ${expectedPageCount}, got ${matches.length} page markers).`
+    )
+  }
+
+  const pages: string[] = []
+  for (let i = 0; i < matches.length; i++) {
+    const pageNumber = Number(matches[i][1])
+    if (pageNumber !== i + 1) {
+      throw new Error(
+        `OCR transcription pages are out of order or mislabeled (expected page ${i + 1}, found page ${pageNumber}).`
+      )
+    }
+    const start = matches[i].index! + matches[i][0].length
+    const end = i + 1 < matches.length ? matches[i + 1].index! : text.length
+    pages.push(text.slice(start, end).trim())
+  }
+  return pages
+}
+
+export async function transcribeScannedPdf(pdfBuffer: ArrayBuffer, expectedPageCount: number): Promise<string[]> {
+  const base64 = Buffer.from(pdfBuffer).toString('base64')
+
+  const stream = anthropic.messages.stream({
+    model: 'claude-sonnet-5',
+    max_tokens: 64000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'medium' },
+    system: OCR_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'document',
+            source: { type: 'base64', media_type: 'application/pdf', data: base64 },
+          },
+          { type: 'text', text: 'Transcribe this document.' },
+        ],
+      },
+    ],
+  })
+
+  const message = await stream.finalMessage()
+
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('OCR transcription was truncated (document produced too much text for v1).')
+  }
+
+  const textBlock = message.content.find((block) => block.type === 'text')
+  if (!textBlock || textBlock.type !== 'text') {
+    throw new Error('OCR transcription returned no text')
+  }
+  return parseTranscribedPages(textBlock.text, expectedPageCount)
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npx vitest run src/lib/ocr.test.ts`
+Expected: PASS (13 tests: 4 `exceedsOcrLimits` + 4 `parseTranscribedPages` + 5 `transcribeScannedPdf`)
+
+- [ ] **Step 5: Splice OCR'd pages with extracted-text pages in `src/app/vault/actions.ts`**
+
+Find:
+
+```typescript
+      if (ocrPageCount > 0) {
+        const limitError = exceedsOcrLimits(file.size, pages.length)
+        if (limitError) {
+          throw new Error(limitError)
+        }
+        text = await transcribeScannedPdf(arrayBuffer)
+      } else {
+        text = pages.join('\n\n')
+      }
+```
+
+Replace with:
+
+```typescript
+      if (ocrPageCount > 0) {
+        const limitError = exceedsOcrLimits(file.size, pages.length)
+        if (limitError) {
+          throw new Error(limitError)
+        }
+        const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
+        const splicedPages = pages.map((pageText, i) => (isPageScanned(pageText) ? ocrPages[i] : pageText))
+        text = splicedPages.join('\n\n')
+      } else {
+        text = pages.join('\n\n')
+      }
+```
+
+This keeps the already-reliable extracted text for every page that wasn't flagged scanned, and only substitutes Claude's transcription for the specific pages that were.
+
+- [ ] **Step 6: Type-check the whole project**
+
+Run: `npx tsc --noEmit`
+Expected: no errors.
+
+- [ ] **Step 7: Run the full test suite**
+
+Run: `npm test`
+Expected: PASS, all tests green (13 in `ocr.test.ts` per Step 4, rest unchanged from before this task).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/lib/ocr.ts src/lib/ocr.test.ts src/app/vault/actions.ts
+git commit -m "Splice OCR transcription per-page instead of replacing the whole document"
+```
