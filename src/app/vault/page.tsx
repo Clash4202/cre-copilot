@@ -17,7 +17,7 @@ export default async function VaultPage() {
   const supabase = await createClient()
   const { data: documents } = await supabase
     .from('documents')
-    .select('id, file_name, doc_type, status, created_at')
+    .select('id, file_name, doc_type, status, created_at, ocr_page_count')
     .order('created_at', { ascending: false })
 
   const docCount = documents?.length ?? 0
@@ -85,7 +85,19 @@ export default async function VaultPage() {
           <tbody>
             {(documents ?? []).map((doc) => (
               <tr key={doc.id} className="border-b border-hairline">
-                <td className="py-3">{doc.file_name}</td>
+                <td className="py-3">
+                  <span className="flex items-center gap-2">
+                    {doc.file_name}
+                    {doc.ocr_page_count > 0 && (
+                      <span
+                        className="rounded-full border border-wine/30 px-1.5 py-0.5 font-mono text-[10px] text-wine"
+                        title={`${doc.ocr_page_count} page${doc.ocr_page_count === 1 ? '' : 's'} were image-only and transcribed by AI OCR — double-check exact figures on ${doc.ocr_page_count === 1 ? 'it' : 'them'}.`}
+                      >
+                        {doc.ocr_page_count} page{doc.ocr_page_count === 1 ? '' : 's'} OCR&apos;d
+                      </span>
+                    )}
+                  </span>
+                </td>
                 <td className="py-3">
                   <span className="inline-flex items-center gap-1.5 text-xs text-slate">
                     <span
