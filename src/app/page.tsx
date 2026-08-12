@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { SiteNav } from '@/components/landing/site-nav'
 import { Hero } from '@/components/landing/hero'
 import { ExampleAnswer } from '@/components/landing/example-answer'
+import { HowItWorks } from '@/components/landing/how-it-works'
+import { WhatsComing } from '@/components/landing/whats-coming'
 
 export default async function HomePage() {
   const supabase = await createClient()
@@ -19,6 +21,8 @@ export default async function HomePage() {
       <SiteNav />
       <Hero />
       <ExampleAnswer />
+      <HowItWorks />
+      <WhatsComing />
     </>
   )
 }
