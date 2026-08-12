@@ -3,7 +3,8 @@
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { extractTextFromFile } from '@/lib/parse'
+import { extractTextFromFile, extractPdfPages, isPageScanned } from '@/lib/parse'
+import { exceedsOcrLimits, transcribeScannedPdf } from '@/lib/ocr'
 import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
 
@@ -61,7 +62,27 @@ export async function uploadDocument(formData: FormData) {
   }
 
   try {
-    const text = await extractTextFromFile(file)
+    let text: string
+    let ocrPageCount = 0
+
+    if (isPdf) {
+      const arrayBuffer = await file.arrayBuffer()
+      const pages = await extractPdfPages(new Uint8Array(arrayBuffer))
+      ocrPageCount = pages.filter(isPageScanned).length
+
+      if (ocrPageCount > 0) {
+        const limitError = exceedsOcrLimits(file.size, pages.length)
+        if (limitError) {
+          throw new Error(limitError)
+        }
+        text = await transcribeScannedPdf(arrayBuffer)
+      } else {
+        text = pages.join('\n\n')
+      }
+    } else {
+      text = await extractTextFromFile(file)
+    }
+
     if (text.length > MAX_EXTRACTED_TEXT_CHARS) {
       throw new Error('This document is too large to process (extracted text exceeds the v1 limit).')
     }
@@ -90,7 +111,10 @@ export async function uploadDocument(formData: FormData) {
       throw new Error('Could not process this document. Please try again.')
     }
 
-    await supabase.from('documents').update({ status: 'ready' }).eq('id', documentRow.id)
+    await supabase
+      .from('documents')
+      .update({ status: 'ready', ocr_page_count: ocrPageCount })
+      .eq('id', documentRow.id)
   } catch (err) {
     console.error('Ingestion failed for document', documentRow.id, err)
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentRow.id)
