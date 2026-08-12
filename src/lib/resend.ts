@@ -1,5 +1,3 @@
-const RESEND_FROM_EMAIL = 'cre-copilot <onboarding@resend.dev>'
-
 interface DemoRequest {
   name: string
   email: string
@@ -8,6 +6,8 @@ interface DemoRequest {
 }
 
 export async function sendDemoRequestEmail(data: DemoRequest): Promise<void> {
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'cre-copilot <onboarding@resend.dev>'
+
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -15,7 +15,7 @@ export async function sendDemoRequestEmail(data: DemoRequest): Promise<void> {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: RESEND_FROM_EMAIL,
+      from: fromEmail,
       to: process.env.DEMO_REQUEST_NOTIFY_EMAIL,
       subject: `Demo request from ${data.name}`,
       text: `Name: ${data.name}\nEmail: ${data.email}\nFirm: ${data.firm}\n\n${data.note}`,

@@ -1,10 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { sendDemoRequestEmail } from './resend'
 
 describe('sendDemoRequestEmail', () => {
   beforeEach(() => {
     process.env.RESEND_API_KEY = 'test-key'
     process.env.DEMO_REQUEST_NOTIFY_EMAIL = 'clayton@example.com'
+    delete process.env.RESEND_FROM_EMAIL
+  })
+
+  afterEach(() => {
+    delete process.env.RESEND_FROM_EMAIL
   })
 
   it('sends the demo request details to the Resend API', async () => {
@@ -29,6 +34,37 @@ describe('sendDemoRequestEmail', () => {
     expect(body.to).toBe('clayton@example.com')
     expect(body.text).toContain('Jamie Broker')
     expect(body.text).toContain('jamie@example.com')
+  })
+
+  it('falls back to the Resend sandbox sender when RESEND_FROM_EMAIL is unset', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await sendDemoRequestEmail({
+      name: 'Jamie Broker',
+      email: 'jamie@example.com',
+      firm: 'Example Realty',
+      note: 'Interested in a demo',
+    })
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.from).toBe('cre-copilot <onboarding@resend.dev>')
+  })
+
+  it('uses RESEND_FROM_EMAIL when set', async () => {
+    process.env.RESEND_FROM_EMAIL = 'cre-copilot <hello@rangeai.dev>'
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    global.fetch = fetchMock as unknown as typeof fetch
+
+    await sendDemoRequestEmail({
+      name: 'Jamie Broker',
+      email: 'jamie@example.com',
+      firm: 'Example Realty',
+      note: 'Interested in a demo',
+    })
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string)
+    expect(body.from).toBe('cre-copilot <hello@rangeai.dev>')
   })
 
   it('throws with the response body on failure', async () => {
