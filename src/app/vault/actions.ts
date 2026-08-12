@@ -75,7 +75,9 @@ export async function uploadDocument(formData: FormData) {
         if (limitError) {
           throw new Error(limitError)
         }
-        text = await transcribeScannedPdf(arrayBuffer)
+        const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
+        const splicedPages = pages.map((pageText, i) => (isPageScanned(pageText) ? ocrPages[i] : pageText))
+        text = splicedPages.join('\n\n')
       } else {
         text = pages.join('\n\n')
       }
