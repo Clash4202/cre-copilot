@@ -1,6 +1,7 @@
 'use client'
 
 import { Reveal } from './reveal'
+import { SectionShell } from './section-shell'
 
 const UPCOMING = [
   {
@@ -15,7 +16,7 @@ const UPCOMING = [
 
 export function WhatsComing() {
   return (
-    <section className="mx-auto max-w-4xl px-6 py-24">
+    <SectionShell className="py-24 sm:py-32">
       <Reveal>
         <div className="flex items-center gap-3">
           <span className="font-mono text-xs uppercase tracking-widest text-slate">
@@ -26,11 +27,12 @@ export function WhatsComing() {
           </span>
         </div>
       </Reveal>
-      <div className="mt-8 grid gap-8 sm:grid-cols-2">
+      <div className="relative mt-12 grid gap-px overflow-hidden rounded-xl border border-hairline bg-hairline sm:grid-cols-2">
         {UPCOMING.map((item, i) => (
-          <Reveal key={item.title} delay={i * 0.1}>
-            <div className="rounded-lg border border-hairline p-6">
-              <h3 className="font-display text-lg font-medium tracking-tight text-ink">
+          <Reveal key={item.title} delay={i * 0.1} className="bg-paper">
+            <div className="h-full p-8">
+              <span className="font-mono text-xs text-slate">0{i + 1}</span>
+              <h3 className="mt-3 font-display text-xl font-medium tracking-tight text-ink">
                 {item.title}
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-slate">{item.body}</p>
@@ -38,6 +40,6 @@ export function WhatsComing() {
           </Reveal>
         ))}
       </div>
-    </section>
+    </SectionShell>
   )
 }
