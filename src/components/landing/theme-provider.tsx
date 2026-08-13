@@ -51,7 +51,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
-      <div id="landing-root" data-theme={theme} className="bg-paper text-ink">
+      <div id="landing-root" data-theme={theme} className="bg-paper text-ink" suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
         {children}
       </div>
