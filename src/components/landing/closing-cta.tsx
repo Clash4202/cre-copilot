@@ -1,17 +1,27 @@
 'use client'
 
 import { Reveal } from './reveal'
+import { SectionShell } from './section-shell'
+import { Skyline } from './skyline'
 
 export function ClosingCTA() {
   return (
-    <section className="mx-auto max-w-3xl px-6 py-24 text-center">
+    <SectionShell
+      className="py-24 text-center sm:py-32"
+      bleed={
+        <Skyline
+          variant="closing"
+          className="absolute inset-x-0 bottom-0 h-[35%] w-full opacity-25"
+        />
+      }
+    >
       <Reveal>
-        <h2 className="font-display text-3xl font-medium tracking-tight text-ink sm:text-4xl">
+        <h2 className="font-display text-[clamp(2rem,4.5vw,4rem)] font-medium tracking-tight text-ink">
           Your documents already have the answer.
         </h2>
       </Reveal>
       <Reveal delay={0.1}>
-        <p className="mt-4 text-base text-slate">Let&apos;s find it together.</p>
+        <p className="mt-4 text-base text-slate sm:text-lg">Let&apos;s find it together.</p>
       </Reveal>
       <Reveal delay={0.2}>
         <a
@@ -21,6 +31,6 @@ export function ClosingCTA() {
           Book a demo
         </a>
       </Reveal>
-    </section>
+    </SectionShell>
   )
 }
