@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import {
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
@@ -32,14 +32,13 @@ const BOOT_SCRIPT = `(function(){try{var t=window.localStorage.getItem(${JSON.st
 )});if(t==='light'){document.getElementById('landing-root').setAttribute('data-theme','light')}}catch(e){}})()`
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME)
-
-  useEffect(() => {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-    if (isValidTheme(stored)) {
-      setTheme(stored)
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_THEME
     }
-  }, [])
+    const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
+    return isValidTheme(stored) ? stored : DEFAULT_THEME
+  })
 
   function toggleTheme() {
     setTheme((current) => {
