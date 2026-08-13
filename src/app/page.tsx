@@ -20,7 +20,7 @@ export default async function HomePage() {
   } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/vault')
+    redirect('/projects')
   }
 
   const cookieStore = await cookies()
