@@ -46,7 +46,7 @@
  * always wins regardless of what @media (prefers-color-scheme) says -
  * login/vault/chat are untouched and keep following the OS setting.
  */
-[data-theme='dark'] {
+#landing-root[data-theme='dark'] {
   --color-paper: #1a1613;
   --color-ink: #ede8de;
   --color-forest: #7fa98d;
@@ -56,7 +56,7 @@
   --color-hairline: #3a342c;
 }
 
-[data-theme='light'] {
+#landing-root[data-theme='light'] {
   --color-paper: #f6f5f0;
   --color-ink: #201a1a;
   --color-forest: #2f4a3d;

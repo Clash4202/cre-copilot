@@ -36,13 +36,15 @@ interface SkylineProps {
 export function Skyline({ variant = 'hero', className = '' }: SkylineProps) {
   const shouldReduceMotion = useReducedMotion()
   const buildings = variant === 'closing' ? CLOSING_BUILDINGS : HERO_BUILDINGS
-  const viewWidth = variant === 'closing' ? 320 : 400
+  // Derived from the building data itself so the viewBox can never drift out
+  // of sync with it and leave empty gutters at the edges.
+  const viewWidth = Math.max(...buildings.map((b) => b.x + b.width)) + 8
 
   return (
     <svg
       viewBox={`0 0 ${viewWidth} ${BASELINE + 16}`}
       className={className}
-      preserveAspectRatio="xMidYMax meet"
+      preserveAspectRatio="none"
       aria-hidden="true"
     >
       <line

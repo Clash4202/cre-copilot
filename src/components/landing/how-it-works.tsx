@@ -33,11 +33,7 @@ export function HowItWorks() {
         />
         {STEPS.map((step, i) => (
           <Reveal key={step.title} delay={i * 0.12}>
-            <div
-              className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-8 ${
-                i % 2 === 1 ? 'sm:flex-row-reverse sm:text-right' : ''
-              }`}
-            >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-8">
               <span className="relative z-10 flex h-12 w-12 flex-none items-center justify-center rounded-full border border-hairline bg-paper font-display text-lg text-wine">
                 {i + 1}
               </span>

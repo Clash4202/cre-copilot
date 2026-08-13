@@ -17,7 +17,7 @@ export function ExampleAnswer() {
         </div>
       </Reveal>
       <Reveal delay={0.15} duration={0.9}>
-        <div className="mx-auto max-w-2xl overflow-hidden rounded-xl border border-hairline bg-paper shadow-lg transition hover:-translate-y-1 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+        <div className="mx-auto max-w-4xl overflow-hidden rounded-xl border border-hairline bg-paper shadow-lg transition hover:-translate-y-1 hover:shadow-xl motion-reduce:transition-none motion-reduce:hover:translate-y-0">
           <div className="flex items-center gap-1.5 border-b border-hairline px-4 py-3">
             <span className="h-2.5 w-2.5 rounded-full bg-hairline" aria-hidden="true" />
             <span className="h-2.5 w-2.5 rounded-full bg-hairline" aria-hidden="true" />

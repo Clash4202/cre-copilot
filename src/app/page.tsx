@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
+import { resolveTheme, THEME_STORAGE_KEY } from '@/lib/theme'
 import { ThemeProvider } from '@/components/landing/theme-provider'
 import { SiteNav } from '@/components/landing/site-nav'
 import { Hero } from '@/components/landing/hero'
@@ -21,8 +23,11 @@ export default async function HomePage() {
     redirect('/vault')
   }
 
+  const cookieStore = await cookies()
+  const initialTheme = resolveTheme(cookieStore.get(THEME_STORAGE_KEY)?.value)
+
   return (
-    <ThemeProvider>
+    <ThemeProvider initialTheme={initialTheme}>
       <SiteNav />
       <Hero />
       <ExampleAnswer />
