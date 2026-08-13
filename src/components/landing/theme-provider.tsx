@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
@@ -32,13 +32,21 @@ const BOOT_SCRIPT = `(function(){try{var t=window.localStorage.getItem(${JSON.st
 )});if(t==='light'){document.getElementById('landing-root').setAttribute('data-theme','light')}}catch(e){}})()`
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === 'undefined') {
-      return DEFAULT_THEME
-    }
+  const [theme, setTheme] = useState<Theme>(DEFAULT_THEME)
+
+  useEffect(() => {
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
-    return isValidTheme(stored) ? stored : DEFAULT_THEME
-  })
+    if (isValidTheme(stored)) {
+      // Syncing from localStorage (a client-only external source) after
+      // mount is the correct place for this: doing it during the initial
+      // render instead (e.g. a useState lazy initializer) makes the
+      // client's first render diverge from the server-rendered HTML and
+      // breaks hydration — this effect intentionally runs after mount,
+      // once hydration is already complete.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTheme(stored)
+    }
+  }, [])
 
   function toggleTheme() {
     setTheme((current) => {
