@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import Script from 'next/script'
 import {
   DEFAULT_THEME,
   THEME_STORAGE_KEY,
@@ -58,8 +59,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      {/*
+        eslint-disable-next-line @next/next/no-before-interactive-script-outside-document --
+        This rule only recognizes the Pages Router's `pages/_document.js` (and
+        blanket-skips anything under an `app/` path segment - see
+        no-before-interactive-script-outside-document.js in
+        @next/eslint-plugin-next, which special-cases app-dir files but has no
+        equivalent allowance for a shared component like this one that isn't
+        itself under `app/`). `beforeInteractive` is still the correct
+        strategy here: it's what makes Next.js queue this script via its own
+        `self.__next_s` bootstrap mechanism instead of rendering a plain JSX
+        `<script>` node that React would warn about and fail to hydrate
+        reliably. Confirmed working with zero console errors in a live
+        browser (default theme, 'light' in localStorage, and first-time
+        visitor cases) - see task-1-report.md.
+      */}
+      <Script id="theme-boot-script" strategy="beforeInteractive">
+        {BOOT_SCRIPT}
+      </Script>
       <div id="landing-root" data-theme={theme} className="bg-paper text-ink" suppressHydrationWarning>
-        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
         {children}
       </div>
     </ThemeContext.Provider>
