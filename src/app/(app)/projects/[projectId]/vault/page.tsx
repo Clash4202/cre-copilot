@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { uploadDocument } from './actions'
 
@@ -13,27 +14,51 @@ const STATUS_DOT: Record<string, string> = {
   failed: 'bg-brick',
 }
 
-export default async function VaultPage() {
+interface DocumentRow {
+  id: string
+  file_name: string
+  doc_type: string | null
+  status: string
+  created_at: string
+  ocr_page_count: number
+}
+
+export default async function ProjectVaultPage({
+  params,
+}: {
+  params: Promise<{ projectId: string }>
+}) {
+  const { projectId } = await params
   const supabase = await createClient()
-  const { data: documents } = await supabase
-    .from('documents')
-    .select('id, file_name, doc_type, status, created_at, ocr_page_count')
+
+  const { data: project } = await supabase.from('projects').select('id').eq('id', projectId).single()
+  if (!project) notFound()
+
+  const { data: links } = await supabase
+    .from('project_documents')
+    .select('created_at, documents(id, file_name, doc_type, status, created_at, ocr_page_count)')
+    .eq('project_id', projectId)
     .order('created_at', { ascending: false })
 
-  const docCount = documents?.length ?? 0
-  const readyCount = documents?.filter((d) => d.status === 'ready').length ?? 0
+  const documents = ((links ?? []) as unknown as { documents: DocumentRow }[])
+    .map((link) => link.documents)
+    .filter(Boolean)
+
+  const docCount = documents.length
+  const readyCount = documents.filter((d) => d.status === 'ready').length
+  const uploadToThisProject = uploadDocument.bind(null, projectId)
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
       <div className="flex flex-col gap-1">
         <span className="font-mono text-xs uppercase tracking-widest text-slate">Vault</span>
-        <h1 className="font-display text-3xl font-medium tracking-tight">Your documents</h1>
+        <h1 className="font-display text-3xl font-medium tracking-tight">This project&apos;s documents</h1>
       </div>
 
       <div className="flex gap-4">
         <div className="flex-1 rounded-md border border-hairline px-4 py-3">
           <div className="font-mono text-2xl tabular-nums">{docCount}</div>
-          <div className="text-xs text-slate">documents uploaded</div>
+          <div className="text-xs text-slate">documents in this project</div>
         </div>
         <div className="flex-1 rounded-md border border-hairline px-4 py-3">
           <div className="font-mono text-2xl tabular-nums text-forest">{readyCount}</div>
@@ -42,10 +67,10 @@ export default async function VaultPage() {
       </div>
 
       <form
-        action={uploadDocument}
+        action={uploadToThisProject}
         className="flex flex-col items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8 text-center"
       >
-        <p className="text-sm text-slate">Add a PDF or plain text file to your vault.</p>
+        <p className="text-sm text-slate">Add a PDF or plain text file to this project.</p>
         <div className="flex items-center gap-2">
           <input
             type="file"
@@ -65,25 +90,19 @@ export default async function VaultPage() {
 
       {docCount === 0 ? (
         <p className="text-sm text-slate">
-          No documents yet. Upload your first file above to start building your vault.
+          No documents yet. Upload your first file above to start building this project&apos;s vault.
         </p>
       ) : (
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-hairline">
-              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">
-                File
-              </th>
-              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">
-                Status
-              </th>
-              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">
-                Uploaded
-              </th>
+              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">File</th>
+              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">Status</th>
+              <th className="py-2 font-mono text-xs font-normal uppercase tracking-widest text-slate">Uploaded</th>
             </tr>
           </thead>
           <tbody>
-            {(documents ?? []).map((doc) => (
+            {documents.map((doc) => (
               <tr key={doc.id} className="border-b border-hairline">
                 <td className="py-3">
                   <span className="flex items-center gap-2">

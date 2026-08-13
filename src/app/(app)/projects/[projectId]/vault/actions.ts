@@ -9,15 +9,14 @@ import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB
-const MAX_EXTRACTED_TEXT_CHARS = 2_000_000 // ~generous for a large real OM; blocks decompression-bomb-style PDFs
-const MAX_CHUNKS_PER_DOCUMENT = 500 // caps the single Voyage embedding batch and the ingestion cost per upload
+const MAX_EXTRACTED_TEXT_CHARS = 2_000_000
+const MAX_CHUNKS_PER_DOCUMENT = 500
 
 function sanitizeFilename(name: string): string {
-  // Untrusted input: strip path separators and control characters before it becomes part of a storage key.
   return name.replace(/[/\\]/g, '_').replace(/[\x00-\x1f]/g, '').slice(0, 200) || 'upload'
 }
 
-export async function uploadDocument(formData: FormData) {
+export async function uploadDocument(projectId: string, formData: FormData) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -59,6 +58,15 @@ export async function uploadDocument(formData: FormData) {
   if (insertError || !documentRow) {
     console.error('Failed to record document:', insertError)
     throw new Error('Could not save this document. Please try again.')
+  }
+
+  const { error: linkError } = await supabase
+    .from('project_documents')
+    .insert({ project_id: projectId, document_id: documentRow.id })
+  if (linkError) {
+    console.error('Failed to link document to project:', linkError)
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentRow.id)
+    throw new Error('Could not add this document to the project. Please try again.')
   }
 
   try {
@@ -127,5 +135,5 @@ export async function uploadDocument(formData: FormData) {
     throw err
   }
 
-  revalidatePath('/vault')
+  revalidatePath(`/projects/${projectId}/vault`)
 }
