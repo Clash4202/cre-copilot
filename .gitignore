@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# superpowers scratch workspace (per-plan ledgers, briefs, review packages)
+/.superpowers/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
