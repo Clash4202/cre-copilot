@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { uploadDocument } from './actions'
+import { linkDocumentToProject, uploadDocument } from './actions'
 
 const STATUS_LABEL: Record<string, string> = {
   ready: 'Ready to search',
@@ -43,6 +43,23 @@ export default async function ProjectVaultPage({
   const documents = ((links ?? []) as unknown as { documents: DocumentRow }[])
     .map((link) => link.documents)
     .filter(Boolean)
+
+  const { data: otherProjectRows } = await supabase.from('projects').select('id, name').neq('id', projectId)
+  const otherProjects = otherProjectRows ?? []
+
+  const documentIds = documents.map((d) => d.id)
+  const linkedProjectIdsByDoc = new Map<string, Set<string>>()
+  if (documentIds.length > 0) {
+    const { data: existingLinks } = await supabase
+      .from('project_documents')
+      .select('document_id, project_id')
+      .in('document_id', documentIds)
+    for (const link of existingLinks ?? []) {
+      const set = linkedProjectIdsByDoc.get(link.document_id) ?? new Set<string>()
+      set.add(link.project_id)
+      linkedProjectIdsByDoc.set(link.document_id, set)
+    }
+  }
 
   const docCount = documents.length
   const readyCount = documents.filter((d) => d.status === 'ready').length
@@ -105,17 +122,43 @@ export default async function ProjectVaultPage({
             {documents.map((doc) => (
               <tr key={doc.id} className="border-b border-hairline">
                 <td className="py-3">
-                  <span className="flex items-center gap-2">
-                    {doc.file_name}
-                    {doc.ocr_page_count > 0 && (
-                      <span
-                        className="rounded-full border border-wine/30 px-1.5 py-0.5 font-mono text-[10px] text-wine"
-                        title={`This PDF had ${doc.ocr_page_count} image-only page${doc.ocr_page_count === 1 ? '' : 's'}, so the whole document was transcribed by AI. Double-check exact figures against the original.`}
-                      >
-                        AI-transcribed
-                      </span>
-                    )}
-                  </span>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="flex items-center gap-2">
+                      {doc.file_name}
+                      {doc.ocr_page_count > 0 && (
+                        <span
+                          className="rounded-full border border-wine/30 px-1.5 py-0.5 font-mono text-[10px] text-wine"
+                          title={`This PDF had ${doc.ocr_page_count} image-only page${doc.ocr_page_count === 1 ? '' : 's'}, so the whole document was transcribed by AI. Double-check exact figures against the original.`}
+                        >
+                          AI-transcribed
+                        </span>
+                      )}
+                    </span>
+                    {(() => {
+                      const linkable = otherProjects.filter((p) => !linkedProjectIdsByDoc.get(doc.id)?.has(p.id))
+                      if (linkable.length === 0) return null
+                      return (
+                        <form action={linkDocumentToProject.bind(null, doc.id, projectId)} className="flex items-center gap-1.5">
+                          <select
+                            name="targetProjectId"
+                            className="rounded border border-hairline bg-paper px-1.5 py-0.5 text-xs text-ink"
+                          >
+                            {linkable.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="submit"
+                            className="font-mono text-[10px] uppercase tracking-widest text-wine transition-colors hover:text-brick"
+                          >
+                            + Add to project
+                          </button>
+                        </form>
+                      )
+                    })()}
+                  </div>
                 </td>
                 <td className="py-3">
                   <span className="inline-flex items-center gap-1.5 text-xs text-slate">

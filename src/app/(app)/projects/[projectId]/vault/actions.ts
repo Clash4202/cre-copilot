@@ -137,3 +137,26 @@ export async function uploadDocument(projectId: string, formData: FormData) {
 
   revalidatePath(`/projects/${projectId}/vault`)
 }
+
+export async function linkDocumentToProject(documentId: string, currentProjectId: string, formData: FormData) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const targetProjectId = formData.get('targetProjectId')
+  if (typeof targetProjectId !== 'string' || !targetProjectId) {
+    throw new Error('Pick a project to add this document to')
+  }
+
+  const { error } = await supabase
+    .from('project_documents')
+    .insert({ project_id: targetProjectId, document_id: documentId })
+  if (error) {
+    console.error('Failed to link document to project:', error)
+    throw new Error('Could not add this document to that project. Please try again.')
+  }
+
+  revalidatePath(`/projects/${currentProjectId}/vault`)
+}
