@@ -1,13 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-
-interface Citation {
-  index: number
-  documentId: string
-  fileName: string
-  excerpt: string
-}
+import type { Citation } from '@/lib/citations'
 
 interface ChatTurn {
   question: string
@@ -15,7 +9,14 @@ interface ChatTurn {
   citations: Citation[]
 }
 
-export default function ChatPage() {
+interface ChatInterfaceProps {
+  projectId?: string
+  eyebrow: string
+  heading: string
+  emptyStateText: string
+}
+
+export function ChatInterface({ projectId, eyebrow, heading, emptyStateText }: ChatInterfaceProps) {
   const [question, setQuestion] = useState('')
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [loading, setLoading] = useState(false)
@@ -30,7 +31,7 @@ export default function ChatPage() {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: currentQuestion }),
+      body: JSON.stringify({ question: currentQuestion, projectId }),
     })
     const data = await response.json()
     setTurns((prev) => [
@@ -43,19 +44,12 @@ export default function ChatPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
       <div className="flex flex-col gap-1">
-        <span className="font-mono text-xs uppercase tracking-widest text-slate">
-          Ask the Brain
-        </span>
-        <h1 className="font-display text-3xl font-medium tracking-tight">
-          Ask your documents
-        </h1>
+        <span className="font-mono text-xs uppercase tracking-widest text-slate">{eyebrow}</span>
+        <h1 className="font-display text-3xl font-medium tracking-tight">{heading}</h1>
       </div>
 
       {turns.length === 0 ? (
-        <p className="text-sm text-slate">
-          Ask a question about anything in your vault. Every answer cites the exact document
-          and passage it came from.
-        </p>
+        <p className="text-sm text-slate">{emptyStateText}</p>
       ) : (
         <div className="flex flex-col gap-8">
           {turns.map((turn, i) => (
@@ -70,10 +64,11 @@ export default function ChatPage() {
                       className="group rounded-md border border-hairline px-2 py-1 open:bg-wine/5"
                     >
                       <summary className="flex cursor-pointer list-none items-center gap-1.5 font-mono text-xs text-wine marker:content-none">
-                        <span className="rounded-full bg-wine px-1.5 text-paper">
-                          {c.index}
-                        </span>
+                        <span className="rounded-full bg-wine px-1.5 text-paper">{c.index}</span>
                         {c.fileName}
+                        {c.projectNames && c.projectNames.length > 0 && (
+                          <span className="text-slate">({c.projectNames.join(', ')})</span>
+                        )}
                       </summary>
                       <p className="mt-1.5 max-w-sm text-xs text-slate">&quot;{c.excerpt}&quot;</p>
                     </details>
@@ -89,7 +84,7 @@ export default function ChatPage() {
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask about your uploaded documents..."
+          placeholder="Ask a question..."
           className="flex-1 rounded-md border border-hairline bg-paper px-3 py-2.5 text-sm text-ink shadow-sm outline-none transition-colors placeholder:text-slate/70 focus:border-forest focus:ring-2 focus:ring-forest/20"
         />
         <button
