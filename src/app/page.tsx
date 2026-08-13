@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { ThemeProvider } from '@/components/landing/theme-provider'
 import { SiteNav } from '@/components/landing/site-nav'
 import { Hero } from '@/components/landing/hero'
 import { ExampleAnswer } from '@/components/landing/example-answer'
@@ -21,7 +22,7 @@ export default async function HomePage() {
   }
 
   return (
-    <>
+    <ThemeProvider>
       <SiteNav />
       <Hero />
       <ExampleAnswer />
@@ -31,6 +32,6 @@ export default async function HomePage() {
       <ClosingCTA />
       <DemoForm />
       <SiteFooter />
-    </>
+    </ThemeProvider>
   )
 }

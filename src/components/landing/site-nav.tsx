@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { ThemeToggle } from './theme-toggle'
 
 export function SiteNav() {
   const [scrolled, setScrolled] = useState(false)
@@ -19,19 +20,19 @@ export function SiteNav() {
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 motion-reduce:transition-none ${
         scrolled
-          ? 'border-b border-hairline bg-paper/95 shadow-sm backdrop-blur'
+          ? 'border-b border-hairline bg-paper/90 shadow-sm backdrop-blur-md'
           : 'border-b border-transparent bg-transparent'
       }`}
     >
-      <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+      <nav className="mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4 sm:px-10 lg:px-16">
         <Link href="/" className="flex items-baseline gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-wine" aria-hidden="true" />
           <span className="font-display text-lg font-medium tracking-tight">cre-copilot</span>
         </Link>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4 sm:gap-6">
           <a
             href="/login"
-            className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
+            className="hidden font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink sm:inline"
           >
             Sign in
           </a>
@@ -41,6 +42,7 @@ export function SiteNav() {
           >
             Book a demo
           </a>
+          <ThemeToggle />
         </div>
       </nav>
     </header>
