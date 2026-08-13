@@ -68,11 +68,15 @@ $$;
 -- One-time backfill: every existing user's existing documents move into a "General"
 -- project so nothing already uploaded (Clayton's real E2E-test documents) is orphaned.
 insert into projects (user_id, name)
-select distinct user_id, 'General' from documents
-on conflict do nothing;
+select distinct user_id, 'General' from documents d
+where not exists (
+  select 1 from projects p where p.user_id = d.user_id and p.name = 'General'
+);
 
 insert into project_documents (project_id, document_id)
 select p.id, d.id
 from documents d
 join projects p on p.user_id = d.user_id and p.name = 'General'
-on conflict do nothing;
+where not exists (
+  select 1 from project_documents pd where pd.project_id = p.id and pd.document_id = d.id
+);
