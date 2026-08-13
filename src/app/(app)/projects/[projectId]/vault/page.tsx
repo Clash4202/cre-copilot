@@ -38,7 +38,7 @@ export default async function ProjectVaultPage({
     .from('project_documents')
     .select('created_at, documents(id, file_name, doc_type, status, created_at, ocr_page_count)')
     .eq('project_id', projectId)
-    .order('created_at', { ascending: false })
+    .order('created_at', { ascending: false, referencedTable: 'documents' })
 
   const documents = ((links ?? []) as unknown as { documents: DocumentRow }[])
     .map((link) => link.documents)

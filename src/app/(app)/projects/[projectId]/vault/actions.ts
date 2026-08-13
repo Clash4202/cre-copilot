@@ -9,10 +9,11 @@ import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB
-const MAX_EXTRACTED_TEXT_CHARS = 2_000_000
-const MAX_CHUNKS_PER_DOCUMENT = 500
+const MAX_EXTRACTED_TEXT_CHARS = 2_000_000 // ~generous for a large real OM; blocks decompression-bomb-style PDFs
+const MAX_CHUNKS_PER_DOCUMENT = 500 // caps the single Voyage embedding batch and the ingestion cost per upload
 
 function sanitizeFilename(name: string): string {
+  // Untrusted input: strip path separators and control characters before it becomes part of a storage key.
   return name.replace(/[/\\]/g, '_').replace(/[\x00-\x1f]/g, '').slice(0, 200) || 'upload'
 }
 
