@@ -78,10 +78,16 @@ survives a property with a different number of units or GL accounts than Avery's
 Templates vary too much for fixed logic — this has to be semantic. When a template is uploaded and
 tagged with an asset type, Claude reads its full structure (all sheets, labels, existing formulas)
 and proposes a mapping: which cells are assumption inputs, which ranges are where unit/tenant rows
-go, which T12 subtotal or rent-roll aggregate feeds which cell, and which 3-5 cells are the
-"headline outputs" (NOI, value indication, cap rate) worth surfacing in-app. The mapping is reviewed
-and corrected once, in a plain editable list UI, then saved as confirmed and reused for every future
-deal on that template — editable again later if it turns out wrong on real use.
+go, and which T12 subtotal or rent-roll aggregate feeds which cell. The mapping is reviewed and
+corrected once, in a plain editable list UI, then saved as confirmed and reused for every future deal
+on that template — editable again later if it turns out wrong on real use.
+
+The mapping only ever describes *inputs* — cells sourced from the T12, rent roll, or a typed-in
+assumption. It never attempts to describe a template's own downstream arithmetic (EGI, NOI, a
+multi-year DCF value indication, and similar). Those stay exactly what they already are in the
+blank template: real formulas, referencing the input cells this system fills, that Excel evaluates
+normally the moment the generated file is opened. This is a deliberate boundary, not an oversight —
+see Model Generation below for why.
 
 ### 3. Model generation
 
@@ -95,19 +101,29 @@ as-possible workbook, with everything the missing document(s) would have supplie
 rather than blocking generation entirely. The system then:
 
 - Applies the confirmed mapping to route parsed T12/rent-roll data and the entered assumptions into
-  the right cells.
-- Computes, in application code, the same math the template's formulas express — needed because
-  this is a serverless deployment with no Excel/LibreOffice available server-side to recalculate a
-  written-but-uncomputed formula, and because the in-app summary needs real numbers regardless of
-  whether/when the file gets opened in Excel.
+  the right *input* cells, as plain values — the same thing Clayton does by hand today (e.g. typing
+  a T12 category total into Avery's OpEx cells), just automated and no longer tied to a fixed row
+  layout.
 - Writes the output workbook with `exceljs` (new dependency — the app currently only reads PDF/text
-  via `unpdf`; nothing handles `.xlsx` yet): real formulas for editability, plus cached computed
-  values so the file shows correct numbers immediately.
+  via `unpdf`; nothing handles `.xlsx` yet). Every formula already in the template — EGI, NOI,
+  Op. Ex. Ratio, the DCF value indication, everything downstream of the input cells — is left
+  completely untouched. Opening the generated file in Excel recalculates it normally, the same as
+  opening any spreadsheet with formulas and no cached results; no server-side recalculation step is
+  needed or attempted.
 - Copies every tab the mapping doesn't touch through untouched (comps, demographics, whatever else
   the template has) — nothing stripped, nothing guessed at.
 - Flags anything the mapping expects but the source documents don't supply (e.g., a per-unit-type
   bed count that isn't a rent-roll column, or a T12 expense category the mapping's never seen
   before) as a gap — shown in-app, never silently dropped or guessed.
+- **In-app summary is intentionally limited to directly-sourced values** — unit counts and average
+  rents by type, which T12 category totals were used, the assumptions entered, and the gap list.
+  It does not show computed headline metrics (NOI, value indication, cap rate), because those come
+  from each template's own multi-step formulas, which vary by template (a 6-year NPV with reversion
+  in one, a differently-shaped one in another) — reproducing that would mean either evaluating
+  arbitrary template formula text (a full spreadsheet-formula engine, unvetted for licensing and
+  reliability) or reimplementing valuation math per template. Neither is in scope here. The real,
+  correct computed numbers are always in the generated Excel file itself, visible the moment it's
+  opened — just not mirrored in the app before that.
 
 ## Data model
 
@@ -168,8 +184,9 @@ across deals of the same asset type). `generated_models` is project-scoped, same
 - Within a project, a new "Model" trigger: pick a confirmed template, pick or upload a T12 and rent
   roll (through the existing Vault — the app auto-detects a `.xlsx` upload that structurally looks
   like a T12 or rent roll), enter this deal's assumptions, generate.
-- Output: a downloadable `.xlsx`, plus an in-app summary of the mapping's designated headline
-  numbers (NOI, value indication, cap rate) so a result can be sanity-checked before opening Excel.
+- Output: a downloadable `.xlsx`, plus an in-app summary of what was filled (unit counts/rents by
+  type, T12 totals used, assumptions entered) and the gap list — see the note at the end of Model
+  Generation above for why this doesn't include computed headline metrics.
 
 ## Error handling
 
