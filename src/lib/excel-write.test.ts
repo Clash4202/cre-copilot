@@ -19,7 +19,7 @@ describe('writeGeneratedWorkbook', () => {
     const outputBuffer = await writeGeneratedWorkbook(templateBuffer, [{ sheet: 'DCF', cell: 'A1', value: 214125.62 }])
 
     const output = new ExcelJS.Workbook()
-    await output.xlsx.load(outputBuffer)
+    await output.xlsx.load(outputBuffer as unknown as ArrayBuffer)
     const sheet = output.getWorksheet('DCF')!
 
     expect(sheet.getCell('A1').value).toBe(214125.62)
@@ -33,7 +33,7 @@ describe('writeGeneratedWorkbook', () => {
     const outputBuffer = await writeGeneratedWorkbook(templateBuffer, [{ sheet: 'Nonexistent', cell: 'A1', value: 1 }])
 
     const output = new ExcelJS.Workbook()
-    await output.xlsx.load(outputBuffer)
+    await output.xlsx.load(outputBuffer as unknown as ArrayBuffer)
     expect(output.getWorksheet('DCF')!.getCell('A1').value).toBe(0)
   })
 })

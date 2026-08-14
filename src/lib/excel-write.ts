@@ -11,5 +11,5 @@ export async function writeGeneratedWorkbook(templateBuffer: ArrayBuffer, writes
     sheet.getCell(write.cell).value = write.value
   }
 
-  return (await workbook.xlsx.writeBuffer()) as Buffer
+  return (await workbook.xlsx.writeBuffer()) as unknown as Buffer
 }
