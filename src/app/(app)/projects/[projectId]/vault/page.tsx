@@ -21,6 +21,7 @@ interface DocumentRow {
   status: string
   created_at: string
   ocr_page_count: number
+  detected_kind: string | null
 }
 
 export default async function ProjectVaultPage({
@@ -36,7 +37,7 @@ export default async function ProjectVaultPage({
 
   const { data: links } = await supabase
     .from('project_documents')
-    .select('created_at, documents(id, file_name, doc_type, status, created_at, ocr_page_count)')
+    .select('created_at, documents(id, file_name, doc_type, status, created_at, ocr_page_count, detected_kind)')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false, referencedTable: 'documents' })
 
@@ -92,7 +93,7 @@ export default async function ProjectVaultPage({
           <input
             type="file"
             name="file"
-            accept=".pdf,.txt"
+            accept=".pdf,.txt,.xlsx"
             required
             className="text-sm text-slate file:mr-3 file:rounded-md file:border file:border-hairline file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-ink hover:file:border-forest"
           />
@@ -131,6 +132,11 @@ export default async function ProjectVaultPage({
                           title={`This PDF had ${doc.ocr_page_count} image-only page${doc.ocr_page_count === 1 ? '' : 's'}, so the whole document was transcribed by AI. Double-check exact figures against the original.`}
                         >
                           AI-transcribed
+                        </span>
+                      )}
+                      {doc.detected_kind && (
+                        <span className="rounded-full border border-forest/30 px-1.5 py-0.5 font-mono text-[10px] text-forest">
+                          {doc.detected_kind === 't12' ? 'T12' : 'Rent Roll'}
                         </span>
                       )}
                     </span>

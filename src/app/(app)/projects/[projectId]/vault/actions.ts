@@ -2,11 +2,14 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import ExcelJS from 'exceljs'
 import { createClient } from '@/lib/supabase/server'
 import { extractTextFromFile, extractPdfPages, isPageScanned, spliceOcrPages } from '@/lib/parse'
 import { exceedsOcrLimits, transcribeScannedPdf } from '@/lib/ocr'
 import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
+import { readWorksheetRows } from '@/lib/xlsx-rows'
+import { detectDocumentKind } from '@/lib/xlsx-detect'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB
 const MAX_EXTRACTED_TEXT_CHARS = 2_000_000 // ~generous for a large real OM; blocks decompression-bomb-style PDFs
@@ -33,8 +36,11 @@ export async function uploadDocument(projectId: string, formData: FormData) {
   }
   const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
   const isText = file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')
-  if (!isPdf && !isText) {
-    throw new Error('Only PDF and plain text files are supported')
+  const isXlsx =
+    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    file.name.toLowerCase().endsWith('.xlsx')
+  if (!isPdf && !isText && !isXlsx) {
+    throw new Error('Only PDF, plain text, and .xlsx files are supported')
   }
 
   const safeName = sanitizeFilename(file.name)
@@ -51,7 +57,7 @@ export async function uploadDocument(projectId: string, formData: FormData) {
       user_id: user.id,
       file_name: file.name,
       storage_path: storagePath,
-      doc_type: isPdf ? 'pdf' : 'text',
+      doc_type: isPdf ? 'pdf' : isXlsx ? 'xlsx' : 'text',
       status: 'processing',
     })
     .select('id')
@@ -71,6 +77,33 @@ export async function uploadDocument(projectId: string, formData: FormData) {
   }
 
   try {
+    if (isXlsx) {
+      const arrayBuffer = await file.arrayBuffer()
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      const firstSheet = workbook.worksheets[0]
+      const rows = firstSheet ? readWorksheetRows(firstSheet) : []
+      const kind = detectDocumentKind(rows)
+
+      if (kind === 'unknown') {
+        throw new Error(
+          "This spreadsheet doesn't look like a T12 or rent roll export we recognize. Only recognized T12/rent roll exports are supported for .xlsx uploads right now."
+        )
+      }
+
+      const { error: readyError } = await supabase
+        .from('documents')
+        .update({ status: 'ready', detected_kind: kind })
+        .eq('id', documentRow.id)
+      if (readyError) {
+        console.error('Failed to mark document ready:', readyError)
+        throw new Error('Could not finish processing this document. Please try again.')
+      }
+
+      revalidatePath(`/projects/${projectId}/vault`)
+      return
+    }
+
     let text: string
     let ocrPageCount = 0
 
