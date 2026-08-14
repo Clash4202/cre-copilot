@@ -40,6 +40,12 @@ export default async function ProjectLayout({
             >
               Ask the Brain
             </Link>
+            <Link
+              href={`/projects/${project.id}/model`}
+              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
+            >
+              Model
+            </Link>
           </div>
         </div>
       </div>

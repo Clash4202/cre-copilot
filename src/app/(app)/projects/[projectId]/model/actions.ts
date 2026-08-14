@@ -46,7 +46,7 @@ export async function runModelGeneration(projectId: string, formData: FormData) 
   const assumptions: Assumptions = {}
   for (const field of mapping.fields as MappingField[]) {
     if (field.source !== 'assumption') continue
-    const raw = formData.get(`assumption.${field.id}`)
+    const raw = formData.get(`assumption.${templateId}.${field.id}`)
     if (typeof raw === 'string' && raw.trim() !== '') {
       const value = Number(raw)
       if (!Number.isNaN(value)) assumptions[field.id] = value
@@ -106,15 +106,24 @@ async function downloadAndParse<T>(
     .select('storage_path')
     .eq('id', documentId)
     .single()
-  if (docError || !document) return null
+  if (docError || !document) {
+    console.error('Failed to find document for parsing:', docError)
+    return null
+  }
 
   const { data: blob, error: downloadError } = await supabase.storage.from('documents').download(document.storage_path)
-  if (downloadError || !blob) return null
+  if (downloadError || !blob) {
+    console.error('Failed to download document for parsing:', downloadError)
+    return null
+  }
 
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(await blob.arrayBuffer())
   const firstSheet = workbook.worksheets[0]
-  if (!firstSheet) return null
+  if (!firstSheet) {
+    console.error('Document has no worksheets to parse:', documentId)
+    return null
+  }
 
   return parse(readWorksheetRows(firstSheet))
 }

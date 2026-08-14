@@ -94,21 +94,26 @@ export default async function ModelGenerationPage({
 
           <div className="flex flex-col gap-3">
             <span className="font-mono text-xs uppercase tracking-widest text-slate">Assumptions</span>
-            {templates.map((t) =>
-              (t.mapping?.fields ?? [])
-                .filter((f) => f.source === 'assumption')
-                .map((f) => (
-                  <label key={f.id} className="flex items-center gap-2 text-sm" data-template-id={t.id}>
-                    <span className="w-48 text-slate">{f.label}</span>
-                    <input
-                      type="number"
-                      step="any"
-                      name={`assumption.${f.id}`}
-                      className="flex-1 rounded-md border border-hairline bg-paper px-3 py-2 text-sm text-ink"
-                    />
-                  </label>
-                ))
-            )}
+            {templates.map((t) => {
+              const assumptionFields = (t.mapping?.fields ?? []).filter((f) => f.source === 'assumption')
+              if (assumptionFields.length === 0) return null
+              return (
+                <div key={t.id} className="flex flex-col gap-2">
+                  <span className="text-xs font-medium text-ink">{t.name}</span>
+                  {assumptionFields.map((f) => (
+                    <label key={f.id} className="flex items-center gap-2 text-sm">
+                      <span className="w-48 text-slate">{f.label}</span>
+                      <input
+                        type="number"
+                        step="any"
+                        name={`assumption.${t.id}.${f.id}`}
+                        className="flex-1 rounded-md border border-hairline bg-paper px-3 py-2 text-sm text-ink"
+                      />
+                    </label>
+                  ))}
+                </div>
+              )
+            })}
           </div>
 
           <button
