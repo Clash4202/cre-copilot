@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { signOut } from '@/app/actions'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -9,14 +10,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <span className="h-1.5 w-1.5 rounded-full bg-wine" aria-hidden="true" />
             <span className="font-display text-lg font-medium tracking-tight">cre-copilot</span>
           </a>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-brick"
+          <div className="flex items-center gap-6">
+            <Link
+              href="/templates"
+              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
             >
-              Sign out
-            </button>
-          </form>
+              Templates
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-brick"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </nav>
       </header>
       <main className="flex-1">{children}</main>

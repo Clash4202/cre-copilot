@@ -26,8 +26,12 @@ export function describeWorkbookStructure(
         let value: string | number | null = null
         let formula: string | null = null
 
-        if (typeof raw === 'object' && raw !== null && 'formula' in raw) {
-          formula = (raw as { formula: string }).formula
+        if (typeof raw === 'object' && raw !== null && ('formula' in raw || 'sharedFormula' in raw)) {
+          // A shared formula's follower cells (e.g. a formula filled down/across a range) carry only
+          // a `sharedFormula` key pointing at the master cell, not a `formula` key. Either key means
+          // this is a formula cell and must never be treated as a literal/candidate-input value.
+          const formulaCell = raw as { formula?: string; sharedFormula?: string }
+          formula = formulaCell.formula ?? formulaCell.sharedFormula ?? null
         } else if (typeof raw === 'number' || typeof raw === 'string') {
           value = raw
         } else {

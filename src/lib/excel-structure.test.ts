@@ -30,6 +30,29 @@ describe('describeWorkbookStructure', () => {
     expect(cells).toHaveLength(1)
   })
 
+  it('reports every cell in a shared formula range as a formula, never as a literal value', () => {
+    // ExcelJS represents a shared formula's follower cells (e.g. a formula filled down/across a
+    // range, as in a DCF model's Year 1..Year N projection grid) WITHOUT a `formula` key -- only a
+    // `sharedFormula` key pointing at the master cell. Regression test for the bug where those
+    // follower cells were emitted as literal values, indistinguishable from real input placeholders.
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet('Sheet1')
+    sheet.getCell('A1').value = 2
+    sheet.fillFormula('B1:B3', 'A1*2', [2, 4, 6])
+
+    const cells = describeWorkbookStructure(workbook)
+
+    const b1 = cells.find((c) => c.cell === 'B1')
+    const b2 = cells.find((c) => c.cell === 'B2')
+    const b3 = cells.find((c) => c.cell === 'B3')
+
+    for (const cell of [b1, b2, b3]) {
+      expect(cell).toBeDefined()
+      expect(cell!.value).toBeNull()
+      expect(cell!.formula).not.toBeNull()
+    }
+  })
+
   it('caps the number of cells described per sheet', () => {
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet('Sheet1')
