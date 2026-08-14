@@ -49,6 +49,8 @@ Only map cells in these categories — everything else, skip entirely, do not li
 
 Do NOT map property identity/record fields (address, zoning, year built, ownership entity, assessed value, parcel data), demographic/population data, or comparable-sales/land/lease-comp tables — those need external market research or county records, not a T12 or rent roll, and are out of scope here. Skip them entirely rather than mapping them as unresolved assumptions.
 
+Apply this exclusion per cell, not per sheet: a sheet can mix in-scope and out-of-scope cells together (e.g. a summary sheet with property address right next to a unit count) — map the in-scope cells on that sheet normally and only skip the specific out-of-scope ones, rather than treating the whole sheet as excluded.
+
 Respond with ONLY a JSON object of this exact shape, no other text:
 
 {"fields": [{"id": "unique-snake-or-dot-id", "label": "human readable label", "sheet": "sheet name", "cell": "A1-style address", "source": "assumption | t12_subtotal | t12_line_item | rent_roll_unit_count | rent_roll_average_budgeted_rent", "sourceKey": "matching label text, or null for source=assumption"}]}
