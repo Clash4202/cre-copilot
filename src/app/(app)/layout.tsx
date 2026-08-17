@@ -12,6 +12,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </a>
           <div className="flex items-center gap-6">
             <Link
+              href="/inbox"
+              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
+            >
+              Inbox
+            </Link>
+            <Link
               href="/libraries"
               className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
             >
