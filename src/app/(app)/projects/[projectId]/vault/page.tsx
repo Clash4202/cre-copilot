@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { linkDocumentToProject, uploadDocument } from './actions'
+import { linkDocumentToProject } from './actions'
 
 const STATUS_LABEL: Record<string, string> = {
   ready: 'Ready to search',
@@ -64,7 +65,6 @@ export default async function ProjectVaultPage({
 
   const docCount = documents.length
   const readyCount = documents.filter((d) => d.status === 'ready').length
-  const uploadToThisProject = uploadDocument.bind(null, projectId)
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
@@ -84,27 +84,9 @@ export default async function ProjectVaultPage({
         </div>
       </div>
 
-      <form
-        action={uploadToThisProject}
-        className="flex flex-col items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8 text-center"
-      >
-        <p className="text-sm text-slate">Add a PDF or plain text file to this project.</p>
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            name="file"
-            accept=".pdf,.txt,.xlsx"
-            required
-            className="text-sm text-slate file:mr-3 file:rounded-md file:border file:border-hairline file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-ink hover:file:border-forest"
-          />
-          <button
-            type="submit"
-            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest"
-          >
-            Upload
-          </button>
-        </div>
-      </form>
+      <p className="text-sm text-slate">
+        Add documents from the <Link href="/inbox" className="text-wine hover:text-brick">Inbox</Link>.
+      </p>
 
       {docCount === 0 ? (
         <p className="text-sm text-slate">

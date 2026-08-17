@@ -11,6 +11,7 @@ import { classifyInboxFile } from '@/lib/inbox-classify'
 import { extractPropertyName, matchProjectByName } from '@/lib/property-match'
 import { proposeSectionMatch, type LibrarySummary } from '@/lib/section-match'
 import { extractPptxSlideText } from '@/lib/pptx-text'
+import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB, matches existing Vault upload limit
 const MAX_STRUCTURE_SUMMARY_CHARS = 20_000 // caps prompt size for very large templates
@@ -317,6 +318,8 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
       .from('project_documents')
       .insert({ project_id: projectId, document_id: newDocument.id })
     if (linkError) throw new Error('Could not link the document to the project.')
+
+    await ingestGeneralDocument(supabase, newDocument.id, destinationPath, item.file_name)
   }
 
   await supabase.storage.from('inbox').remove([item.storage_path])
