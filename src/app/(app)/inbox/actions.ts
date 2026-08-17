@@ -158,7 +158,14 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
 
     let projectId: string
     if (typeof existingProjectId === 'string' && existingProjectId) {
-      projectId = existingProjectId
+      const { data: ownedProject } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('id', existingProjectId)
+        .eq('user_id', user.id)
+        .single()
+      if (!ownedProject) throw new Error('Project not found')
+      projectId = ownedProject.id
     } else {
       const { data: newProject, error: projectError } = await supabase
         .from('projects')
@@ -273,7 +280,14 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
 
     let projectId: string
     if (typeof existingProjectId === 'string' && existingProjectId) {
-      projectId = existingProjectId
+      const { data: ownedProject } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('id', existingProjectId)
+        .eq('user_id', user.id)
+        .single()
+      if (!ownedProject) throw new Error('Project not found')
+      projectId = ownedProject.id
     } else {
       const { data: newProject, error: projectError } = await supabase
         .from('projects')
