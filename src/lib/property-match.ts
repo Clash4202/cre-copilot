@@ -4,8 +4,12 @@ import type { XlsxRow } from './xlsx-rows'
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MAX_HEADER_ROWS = 10
 
+function escapeForPrompt(text: string): string {
+  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
 export function buildPropertyNamePrompt(headerRows: XlsxRow[]): string {
-  const rowsJson = JSON.stringify(headerRows.slice(0, MAX_HEADER_ROWS))
+  const rowsJson = escapeForPrompt(JSON.stringify(headerRows.slice(0, MAX_HEADER_ROWS)))
 
   return `Below are the first rows of a commercial real estate T12 or rent roll export, as JSON arrays of cell values.
 
