@@ -1217,7 +1217,7 @@ import { detectDocumentKind } from '@/lib/xlsx-detect'
 import { describeWorkbookStructure } from '@/lib/excel-structure'
 import { classifyInboxFile } from '@/lib/inbox-classify'
 import { extractPropertyName, matchProjectByName } from '@/lib/property-match'
-import { proposeSectionMatch } from '@/lib/section-match'
+import { proposeSectionMatch, type LibrarySummary } from '@/lib/section-match'
 import { extractPptxSlideText } from '@/lib/pptx-text'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB, matches existing Vault upload limit
@@ -1225,6 +1225,22 @@ const MAX_STRUCTURE_SUMMARY_CHARS = 20_000 // caps prompt size for very large te
 
 function sanitizeFilename(name: string): string {
   return name.replace(/[/\\]/g, '_').replace(/[\x00-\x1f]/g, '').slice(0, 200) || 'upload'
+}
+
+async function loadLibrarySummaries(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+): Promise<LibrarySummary[]> {
+  const { data: librariesData } = await supabase.from('libraries').select('id, name').eq('user_id', userId)
+  return Promise.all(
+    (librariesData ?? []).map(async (l) => {
+      const { data: sectionsData } = await supabase
+        .from('library_sections')
+        .select('id, name, description')
+        .eq('library_id', l.id)
+      return { id: l.id, name: l.name, sections: sectionsData ?? [] }
+    })
+  )
 }
 
 export async function stageInboxUpload(formData: FormData) {
@@ -1280,17 +1296,7 @@ export async function stageInboxUpload(formData: FormData) {
     const structure = describeWorkbookStructure(workbook)
     const structureSummary = JSON.stringify(structure).slice(0, MAX_STRUCTURE_SUMMARY_CHARS)
 
-    const { data: librariesData } = await supabase.from('libraries').select('id, name').eq('user_id', user.id)
-    const libraries = await Promise.all(
-      (librariesData ?? []).map(async (l) => {
-        const { data: sectionsData } = await supabase
-          .from('library_sections')
-          .select('id, name, description')
-          .eq('library_id', l.id)
-        return { id: l.id, name: l.name, sections: sectionsData ?? [] }
-      })
-    )
-
+    const libraries = await loadLibrarySummaries(supabase, user.id)
     const match = await proposeSectionMatch(libraries, 'template', structureSummary)
     proposal = { ...match }
   } else if (detectedType === 'candidate_bov') {
@@ -1298,17 +1304,7 @@ export async function stageInboxUpload(formData: FormData) {
     const slideTexts = await extractPptxSlideText(Buffer.from(arrayBuffer))
     const structureSummary = slideTexts.join(' | ').slice(0, MAX_STRUCTURE_SUMMARY_CHARS)
 
-    const { data: librariesData } = await supabase.from('libraries').select('id, name').eq('user_id', user.id)
-    const libraries = await Promise.all(
-      (librariesData ?? []).map(async (l) => {
-        const { data: sectionsData } = await supabase
-          .from('library_sections')
-          .select('id, name, description')
-          .eq('library_id', l.id)
-        return { id: l.id, name: l.name, sections: sectionsData ?? [] }
-      })
-    )
-
+    const libraries = await loadLibrarySummaries(supabase, user.id)
     const match = await proposeSectionMatch(libraries, 'bov', structureSummary)
     proposal = { ...match }
   }
