@@ -115,3 +115,200 @@ export async function stageInboxUpload(formData: FormData) {
 
   revalidatePath('/inbox')
 }
+
+async function copyFromInboxTo(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  fromPath: string,
+  toBucket: string,
+  toPath: string
+) {
+  const { data: downloaded, error: downloadError } = await supabase.storage.from('inbox').download(fromPath)
+  if (downloadError || !downloaded) {
+    throw new Error('Could not read the staged file.')
+  }
+  const { error: uploadError } = await supabase.storage.from(toBucket).upload(toPath, downloaded)
+  if (uploadError) {
+    throw new Error('Could not move the staged file into place.')
+  }
+}
+
+export async function confirmInboxItem(itemId: string, formData: FormData) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data: item } = await supabase
+    .from('inbox_items')
+    .select('id, user_id, file_name, storage_path, detected_type')
+    .eq('id', itemId)
+    .eq('user_id', user.id)
+    .single()
+  if (!item) throw new Error('Inbox item not found')
+
+  const destinationPath = `${user.id}/${randomUUID()}-${sanitizeFilename(item.file_name)}`
+
+  if (item.detected_type === 'property_document') {
+    const propertyName = formData.get('propertyName')
+    const existingProjectId = formData.get('existingProjectId')
+    if (typeof propertyName !== 'string' || !propertyName.trim()) {
+      throw new Error('Give this property a name')
+    }
+
+    let projectId: string
+    if (typeof existingProjectId === 'string' && existingProjectId) {
+      projectId = existingProjectId
+    } else {
+      const { data: newProject, error: projectError } = await supabase
+        .from('projects')
+        .insert({ user_id: user.id, name: propertyName.trim() })
+        .select('id')
+        .single()
+      if (projectError || !newProject) throw new Error('Could not create the project.')
+      projectId = newProject.id
+    }
+
+    await copyFromInboxTo(supabase, item.storage_path, 'documents', destinationPath)
+
+    let detectedKind: string | null = null
+    const { data: downloadedBlob } = await supabase.storage.from('documents').download(destinationPath)
+    if (downloadedBlob) {
+      const arrayBuffer = await downloadedBlob.arrayBuffer()
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      const firstSheet = workbook.worksheets[0]
+      const rows = firstSheet ? readWorksheetRows(firstSheet) : []
+      const kind = detectDocumentKind(rows)
+      detectedKind = kind === 'unknown' ? null : kind
+    }
+
+    const { data: newDocument, error: documentError } = await supabase
+      .from('documents')
+      .insert({
+        user_id: user.id,
+        file_name: item.file_name,
+        storage_path: destinationPath,
+        doc_type: 'xlsx',
+        status: 'ready',
+        detected_kind: detectedKind,
+      })
+      .select('id')
+      .single()
+    if (documentError || !newDocument) throw new Error('Could not save the document.')
+
+    const { error: linkError } = await supabase
+      .from('project_documents')
+      .insert({ project_id: projectId, document_id: newDocument.id })
+    if (linkError) throw new Error('Could not link the document to the project.')
+  } else if (item.detected_type === 'candidate_template' || item.detected_type === 'candidate_bov') {
+    const libraryName = formData.get('libraryName')
+    const sectionName = formData.get('sectionName')
+    const sectionDescription = formData.get('sectionDescription')
+    const existingLibraryId = formData.get('existingLibraryId')
+    const existingSectionId = formData.get('existingSectionId')
+    if (typeof libraryName !== 'string' || !libraryName.trim()) throw new Error('Give the library a name')
+    if (typeof sectionName !== 'string' || !sectionName.trim()) throw new Error('Give the section a name')
+    if (typeof sectionDescription !== 'string') throw new Error('Description is required')
+
+    let libraryId: string
+    if (typeof existingLibraryId === 'string' && existingLibraryId) {
+      const { data: ownedLibrary } = await supabase
+        .from('libraries')
+        .select('id')
+        .eq('id', existingLibraryId)
+        .eq('user_id', user.id)
+        .single()
+      if (!ownedLibrary) throw new Error('Library not found')
+      libraryId = ownedLibrary.id
+    } else {
+      const { data: newLibrary, error: libraryError } = await supabase
+        .from('libraries')
+        .insert({ user_id: user.id, name: libraryName.trim() })
+        .select('id')
+        .single()
+      if (libraryError || !newLibrary) throw new Error('Could not create the library.')
+      libraryId = newLibrary.id
+    }
+
+    let sectionId: string
+    if (typeof existingSectionId === 'string' && existingSectionId) {
+      const { data: ownedSection } = await supabase
+        .from('library_sections')
+        .select('id, library_id, libraries!inner(user_id)')
+        .eq('id', existingSectionId)
+        .eq('library_id', libraryId)
+        .eq('libraries.user_id', user.id)
+        .single()
+      if (!ownedSection) throw new Error('Section not found')
+      sectionId = ownedSection.id
+    } else {
+      const { data: newSection, error: sectionError } = await supabase
+        .from('library_sections')
+        .insert({ library_id: libraryId, name: sectionName.trim(), description: sectionDescription.trim() })
+        .select('id')
+        .single()
+      if (sectionError || !newSection) throw new Error('Could not create the section.')
+      sectionId = newSection.id
+    }
+
+    const bucket = item.detected_type === 'candidate_template' ? 'templates' : 'bov-templates'
+    const table = item.detected_type === 'candidate_template' ? 'templates' : 'bov_templates'
+    await copyFromInboxTo(supabase, item.storage_path, bucket, destinationPath)
+
+    const { error: fileError } = await supabase.from(table).insert({
+      user_id: user.id,
+      section_id: sectionId,
+      name: item.file_name,
+      storage_path: destinationPath,
+      ...(table === 'templates' ? { asset_type: 'unspecified' } : {}),
+    })
+    if (fileError) throw new Error('Could not save the file.')
+  } else {
+    const propertyName = formData.get('propertyName')
+    const existingProjectId = formData.get('existingProjectId')
+    if (typeof propertyName !== 'string' || !propertyName.trim()) {
+      throw new Error('Give this document a project to belong to')
+    }
+
+    let projectId: string
+    if (typeof existingProjectId === 'string' && existingProjectId) {
+      projectId = existingProjectId
+    } else {
+      const { data: newProject, error: projectError } = await supabase
+        .from('projects')
+        .insert({ user_id: user.id, name: propertyName.trim() })
+        .select('id')
+        .single()
+      if (projectError || !newProject) throw new Error('Could not create the project.')
+      projectId = newProject.id
+    }
+
+    await copyFromInboxTo(supabase, item.storage_path, 'documents', destinationPath)
+
+    const { data: newDocument, error: documentError } = await supabase
+      .from('documents')
+      .insert({
+        user_id: user.id,
+        file_name: item.file_name,
+        storage_path: destinationPath,
+        doc_type: item.file_name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'text',
+        status: 'processing',
+      })
+      .select('id')
+      .single()
+    if (documentError || !newDocument) throw new Error('Could not save the document.')
+
+    const { error: linkError } = await supabase
+      .from('project_documents')
+      .insert({ project_id: projectId, document_id: newDocument.id })
+    if (linkError) throw new Error('Could not link the document to the project.')
+  }
+
+  await supabase.storage.from('inbox').remove([item.storage_path])
+  await supabase.from('inbox_items').update({ status: 'confirmed' }).eq('id', itemId)
+
+  revalidatePath('/inbox')
+  revalidatePath('/libraries')
+  revalidatePath('/projects')
+}
