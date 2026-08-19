@@ -2,11 +2,14 @@
 
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import ExcelJS from 'exceljs'
 import { createClient } from '@/lib/supabase/server'
 import { extractTextFromFile, extractPdfPages, isPageScanned, spliceOcrPages } from '@/lib/parse'
 import { exceedsOcrLimits, transcribeScannedPdf } from '@/lib/ocr'
 import { chunkText } from '@/lib/chunk'
 import { embedTexts } from '@/lib/voyage'
+import { readWorksheetRows } from '@/lib/xlsx-rows'
+import { detectDocumentKind } from '@/lib/xlsx-detect'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB
 const MAX_EXTRACTED_TEXT_CHARS = 2_000_000 // ~generous for a large real OM; blocks decompression-bomb-style PDFs
@@ -15,6 +18,89 @@ const MAX_CHUNKS_PER_DOCUMENT = 500 // caps the single Voyage embedding batch an
 function sanitizeFilename(name: string): string {
   // Untrusted input: strip path separators and control characters before it becomes part of a storage key.
   return name.replace(/[/\\]/g, '_').replace(/[\x00-\x1f]/g, '').slice(0, 200) || 'upload'
+}
+
+export async function ingestGeneralDocument(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  documentId: string,
+  storagePath: string,
+  fileName: string
+) {
+  try {
+    const { data: blob, error: downloadError } = await supabase.storage.from('documents').download(storagePath)
+    if (downloadError || !blob) {
+      throw new Error('Could not read the uploaded file.')
+    }
+    const arrayBuffer = await blob.arrayBuffer()
+    const isPdf = fileName.toLowerCase().endsWith('.pdf')
+
+    let text: string
+    let ocrPageCount = 0
+
+    if (isPdf) {
+      const pages = await extractPdfPages(new Uint8Array(arrayBuffer))
+      ocrPageCount = pages.filter(isPageScanned).length
+
+      if (ocrPageCount > 0) {
+        const limitError = exceedsOcrLimits(blob.size, pages.length)
+        if (limitError) {
+          throw new Error(limitError)
+        }
+        const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
+        const splicedPages = spliceOcrPages(pages, ocrPages)
+        text = splicedPages.join('\n\n')
+      } else {
+        text = pages.join('\n\n')
+      }
+    } else {
+      text = await extractTextFromFile(new File([blob], fileName))
+    }
+
+    if (text.length > MAX_EXTRACTED_TEXT_CHARS) {
+      throw new Error('This document is too large to process (extracted text exceeds the v1 limit).')
+    }
+
+    const chunks = chunkText(text)
+    if (chunks.length === 0) {
+      throw new Error('No extractable text found in this file')
+    }
+    if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
+      throw new Error('This document is too large to process (too many sections for v1).')
+    }
+
+    const embeddings = await embedTexts(chunks, 'document')
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    const { error: chunksError } = await supabase.from('document_chunks').insert(
+      chunks.map((content, i) => ({
+        document_id: documentId,
+        user_id: user?.id,
+        chunk_index: i,
+        content,
+        embedding: embeddings[i],
+      }))
+    )
+    if (chunksError) {
+      console.error('Failed to store document chunks:', chunksError)
+      throw new Error('Could not process this document. Please try again.')
+    }
+
+    const { error: readyError } = await supabase
+      .from('documents')
+      .update({ status: 'ready', ocr_page_count: ocrPageCount })
+      .eq('id', documentId)
+    if (readyError) {
+      console.error('Failed to mark document ready:', readyError)
+      throw new Error('Could not finish processing this document. Please try again.')
+    }
+  } catch (err) {
+    console.error('Ingestion failed for document', documentId, err)
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId)
+    throw err
+  }
 }
 
 export async function uploadDocument(projectId: string, formData: FormData) {
@@ -33,8 +119,11 @@ export async function uploadDocument(projectId: string, formData: FormData) {
   }
   const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
   const isText = file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')
-  if (!isPdf && !isText) {
-    throw new Error('Only PDF and plain text files are supported')
+  const isXlsx =
+    file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+    file.name.toLowerCase().endsWith('.xlsx')
+  if (!isPdf && !isText && !isXlsx) {
+    throw new Error('Only PDF, plain text, and .xlsx files are supported')
   }
 
   const safeName = sanitizeFilename(file.name)
@@ -51,7 +140,7 @@ export async function uploadDocument(projectId: string, formData: FormData) {
       user_id: user.id,
       file_name: file.name,
       storage_path: storagePath,
-      doc_type: isPdf ? 'pdf' : 'text',
+      doc_type: isPdf ? 'pdf' : isXlsx ? 'xlsx' : 'text',
       status: 'processing',
     })
     .select('id')
@@ -70,71 +159,40 @@ export async function uploadDocument(projectId: string, formData: FormData) {
     throw new Error('Could not add this document to the project. Please try again.')
   }
 
-  try {
-    let text: string
-    let ocrPageCount = 0
-
-    if (isPdf) {
+  if (isXlsx) {
+    try {
       const arrayBuffer = await file.arrayBuffer()
-      const pages = await extractPdfPages(new Uint8Array(arrayBuffer))
-      ocrPageCount = pages.filter(isPageScanned).length
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      const firstSheet = workbook.worksheets[0]
+      const rows = firstSheet ? readWorksheetRows(firstSheet) : []
+      const kind = detectDocumentKind(rows)
 
-      if (ocrPageCount > 0) {
-        const limitError = exceedsOcrLimits(file.size, pages.length)
-        if (limitError) {
-          throw new Error(limitError)
-        }
-        const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
-        const splicedPages = spliceOcrPages(pages, ocrPages)
-        text = splicedPages.join('\n\n')
-      } else {
-        text = pages.join('\n\n')
+      if (kind === 'unknown') {
+        throw new Error(
+          "This spreadsheet doesn't look like a T12 or rent roll export we recognize. Only recognized T12/rent roll exports are supported for .xlsx uploads right now."
+        )
       }
-    } else {
-      text = await extractTextFromFile(file)
+
+      const { error: readyError } = await supabase
+        .from('documents')
+        .update({ status: 'ready', detected_kind: kind })
+        .eq('id', documentRow.id)
+      if (readyError) {
+        console.error('Failed to mark document ready:', readyError)
+        throw new Error('Could not finish processing this document. Please try again.')
+      }
+    } catch (err) {
+      console.error('Ingestion failed for document', documentRow.id, err)
+      await supabase.from('documents').update({ status: 'failed' }).eq('id', documentRow.id)
+      throw err
     }
 
-    if (text.length > MAX_EXTRACTED_TEXT_CHARS) {
-      throw new Error('This document is too large to process (extracted text exceeds the v1 limit).')
-    }
-
-    const chunks = chunkText(text)
-    if (chunks.length === 0) {
-      throw new Error('No extractable text found in this file')
-    }
-    if (chunks.length > MAX_CHUNKS_PER_DOCUMENT) {
-      throw new Error('This document is too large to process (too many sections for v1).')
-    }
-
-    const embeddings = await embedTexts(chunks, 'document')
-
-    const { error: chunksError } = await supabase.from('document_chunks').insert(
-      chunks.map((content, i) => ({
-        document_id: documentRow.id,
-        user_id: user.id,
-        chunk_index: i,
-        content,
-        embedding: embeddings[i],
-      }))
-    )
-    if (chunksError) {
-      console.error('Failed to store document chunks:', chunksError)
-      throw new Error('Could not process this document. Please try again.')
-    }
-
-    const { error: readyError } = await supabase
-      .from('documents')
-      .update({ status: 'ready', ocr_page_count: ocrPageCount })
-      .eq('id', documentRow.id)
-    if (readyError) {
-      console.error('Failed to mark document ready:', readyError)
-      throw new Error('Could not finish processing this document. Please try again.')
-    }
-  } catch (err) {
-    console.error('Ingestion failed for document', documentRow.id, err)
-    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentRow.id)
-    throw err
+    revalidatePath(`/projects/${projectId}/vault`)
+    return
   }
+
+  await ingestGeneralDocument(supabase, documentRow.id, storagePath, file.name)
 
   revalidatePath(`/projects/${projectId}/vault`)
 }

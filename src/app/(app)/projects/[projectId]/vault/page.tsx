@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { linkDocumentToProject, uploadDocument } from './actions'
+import { linkDocumentToProject } from './actions'
 
 const STATUS_LABEL: Record<string, string> = {
   ready: 'Ready to search',
@@ -21,6 +22,7 @@ interface DocumentRow {
   status: string
   created_at: string
   ocr_page_count: number
+  detected_kind: string | null
 }
 
 export default async function ProjectVaultPage({
@@ -36,7 +38,7 @@ export default async function ProjectVaultPage({
 
   const { data: links } = await supabase
     .from('project_documents')
-    .select('created_at, documents(id, file_name, doc_type, status, created_at, ocr_page_count)')
+    .select('created_at, documents(id, file_name, doc_type, status, created_at, ocr_page_count, detected_kind)')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false, referencedTable: 'documents' })
 
@@ -63,7 +65,6 @@ export default async function ProjectVaultPage({
 
   const docCount = documents.length
   const readyCount = documents.filter((d) => d.status === 'ready').length
-  const uploadToThisProject = uploadDocument.bind(null, projectId)
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
@@ -83,31 +84,17 @@ export default async function ProjectVaultPage({
         </div>
       </div>
 
-      <form
-        action={uploadToThisProject}
-        className="flex flex-col items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8 text-center"
-      >
-        <p className="text-sm text-slate">Add a PDF or plain text file to this project.</p>
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            name="file"
-            accept=".pdf,.txt"
-            required
-            className="text-sm text-slate file:mr-3 file:rounded-md file:border file:border-hairline file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-ink hover:file:border-forest"
-          />
-          <button
-            type="submit"
-            className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest"
-          >
-            Upload
-          </button>
-        </div>
-      </form>
+      <p className="text-sm text-slate">
+        Add documents from the <Link href="/inbox" className="text-wine hover:text-brick">Inbox</Link>.
+      </p>
 
       {docCount === 0 ? (
         <p className="text-sm text-slate">
-          No documents yet. Upload your first file above to start building this project&apos;s vault.
+          No documents yet. Add your first file from the{' '}
+          <Link href="/inbox" className="text-wine hover:text-brick">
+            Inbox
+          </Link>{' '}
+          to start building this project&apos;s vault.
         </p>
       ) : (
         <table className="w-full text-left text-sm">
@@ -131,6 +118,11 @@ export default async function ProjectVaultPage({
                           title={`This PDF had ${doc.ocr_page_count} image-only page${doc.ocr_page_count === 1 ? '' : 's'}, so the whole document was transcribed by AI. Double-check exact figures against the original.`}
                         >
                           AI-transcribed
+                        </span>
+                      )}
+                      {doc.detected_kind && (
+                        <span className="rounded-full border border-forest/30 px-1.5 py-0.5 font-mono text-[10px] text-forest">
+                          {doc.detected_kind === 't12' ? 'T12' : 'Rent Roll'}
                         </span>
                       )}
                     </span>

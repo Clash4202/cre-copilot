@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import { signOut } from '@/app/actions'
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -21,14 +22,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               cre-copilot
             </span>
           </a>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-brick"
+          <div className="flex items-center gap-6">
+            <Link
+              href="/inbox"
+              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
             >
-              Sign out
-            </button>
-          </form>
+              Inbox
+            </Link>
+            <Link
+              href="/libraries"
+              className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-ink"
+            >
+              Libraries
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="font-mono text-xs uppercase tracking-widest text-slate transition-colors hover:text-brick"
+              >
+                Sign out
+              </button>
+            </form>
+          </div>
         </nav>
       </header>
       <main className="flex-1">{children}</main>

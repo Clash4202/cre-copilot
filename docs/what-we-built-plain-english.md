@@ -140,3 +140,85 @@ works, end to end, live, for the first time.
   Vercel deployment, so that once this *is* public, nobody could spam the
   upload button and run up real AI costs. Already on the list, agreed to
   fix before going live rather than right now.
+
+## Session 3: Excel/DCF model automation (subsystem 1 of 3)
+
+Written 2026-08-14. This is the second of three planned subsystems (project
+workspaces shipped first). It builds the piece Clayton actually asked for
+next: take a T12 and a rent roll, and fill out a DCF/direct-cap Excel
+underwriting model — without manual retyping and without the model being
+tied to one fixed spreadsheet layout.
+
+### The big picture
+
+You upload a blank Excel underwriting template once (any layout — a
+multifamily unit-mix model and a commercial tenant-roll model both work,
+since the two are structurally nothing alike and this had to handle both).
+Claude reads the template and proposes which cells are inputs and what
+should fill them; you review and correct that proposal once, and it's
+reused for every future deal on that template. Then, per deal, you pick a
+T12 and/or rent roll from a project's Vault, type in this deal's
+assumptions (rent growth, vacancy, cap rate — always blank by default,
+never guessed), and generate. The system fills in what it can and lists
+what it can't as gaps, rather than blocking or guessing. Every formula
+already in the template — NOI, EGI, the DCF valuation, everything
+downstream — is left completely untouched; the file's own math still works
+exactly as it did before, Excel just recalculates it normally when you open
+the file.
+
+### How it's built, in one sentence per piece
+
+- Two small, deterministic parsers read a T12 and a rent roll export by
+  their structure (GL account codes, subtotal rows, "Unit Type:" markers) —
+  not by fixed row numbers, so a different property with more or fewer
+  units still works.
+- A third piece asks Claude to read a blank template's structure once and
+  propose a mapping (which cells are inputs, what should fill them); you
+  review it in a table and confirm it.
+- A fourth piece takes that confirmed mapping plus a deal's parsed
+  documents and typed-in assumptions, and writes only the resolved values —
+  as plain numbers, never formulas — into a fresh copy of the template.
+
+### What was tested, and how
+
+Every parser was tested against the *real* files you sent (a real AppFolio
+T12 export, a real AppFolio rent roll export, and a real, complex
+multifamily deal workbook) — not made-up examples. Beyond the automated
+test suite, the extraction and AI-mapping pieces were also run directly
+against those real files one more time as a final check, which is how two
+real problems got caught and fixed before you ever would have hit them:
+
+1. **The AI mapping step was breaking on a real, large template.** Your
+   general commercial template has 11 sheets, and the first version of the
+   prompt asked Claude to map *every* input-looking cell across *all* of
+   them — including a Demographics sheet (population/growth data at
+   several mile-radii) and comps tables, which have nothing to do with a
+   T12 or rent roll and were always meant to stay out of scope. That
+   produced a response too long for its token budget, which cut off
+   mid-way and failed. Fixed by telling Claude explicitly what's in scope
+   (DCF/valuation assumptions, T12-derived expenses, rent-roll-derived unit
+   mix) and what isn't (property records, demographics, comps) — Claude
+   now skips the out-of-scope stuff entirely instead of trying to map it.
+2. **A related SDK limit.** Fixing problem 1 needs more output room from
+   Claude, and past a certain size Anthropic's own API requires a
+   different, "streaming" way of asking for it rather than just waiting for
+   one big reply. Switched to that.
+
+Both fixes were verified by actually re-running the AI mapping against your
+real template afterward, not just by re-reading the code.
+
+### What's NOT verified yet (needs you)
+
+The very last step — actually clicking through the app (upload a template,
+review its mapping, upload a T12/rent roll to a project, generate, download
+the result, open it in Excel) — could not be completed this session. The
+app requires a real emailed sign-in link to log in, and the second one
+requested during this session's live walkthrough never arrived (the first,
+earlier one did, and got this far checked out live: signed in fine, saw
+your existing "Test Deal" and "General" projects). Everything *up through*
+that point — the actual parsing and AI-mapping logic — was independently
+verified against your real files by calling the same code directly,
+bypassing only the browser. The one thing that genuinely still needs a
+live click-through with your own login is confirming the upload → generate
+→ download flow end-to-end in the browser, and opening the resulting
+`.xlsx` in Excel to eyeball it.
