@@ -1,12 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { XlsxRow } from './xlsx-rows'
+// The header rows below are raw cell values from a user-uploaded workbook, placed inside <rows>.
+import { escapeForPrompt } from './escape-prompt'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const MAX_HEADER_ROWS = 10
-
-function escapeForPrompt(text: string): string {
-  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
 
 export function buildPropertyNamePrompt(headerRows: XlsxRow[]): string {
   const rowsJson = escapeForPrompt(JSON.stringify(headerRows.slice(0, MAX_HEADER_ROWS)))

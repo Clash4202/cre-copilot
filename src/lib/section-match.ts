@@ -1,4 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
+// structureSummary is derived from a user-uploaded file's content (fully untrusted); librariesJson
+// reflects the user's own section names/descriptions, which they could still craft adversarially
+// within their own account. Both go inside XML-style tags below, so both are escaped.
+import { escapeForPrompt } from './escape-prompt'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -14,16 +18,6 @@ export interface SectionMatchResult {
   sectionId: string | null
   sectionName: string
   sectionDescription: string
-}
-
-// structureSummary is derived from a user-uploaded file's content (fully untrusted); librariesJson
-// reflects the user's own section names/descriptions, which they could still craft adversarially
-// within their own account. Both go inside XML-style tags below, so both are escaped the same way
-// src/lib/claude.ts already escapes untrusted chunk content — see that file's escapeForPrompt for
-// the full rationale: unescaped `<`/`>` could let embedded text close a tag early and forge what
-// looks like a new instruction block.
-function escapeForPrompt(text: string): string {
-  return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 export function buildSectionMatchPrompt(
