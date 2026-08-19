@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { createLibrary, createSection } from './actions'
+import { analyzeTemplate } from '@/app/(app)/templates/actions'
 
 interface SectionRow {
   id: string
@@ -17,6 +18,7 @@ interface TemplateFileRow {
   id: string
   name: string
   mapping_status: string
+  mapping: { fields: unknown[] } | null
   section_id: string | null
 }
 
@@ -61,7 +63,7 @@ export default async function LibrariesPage({
 
     const { data: templatesData } = await supabase
       .from('templates')
-      .select('id, name, mapping_status, section_id')
+      .select('id, name, mapping_status, mapping, section_id')
       .in('section_id', sectionIds.length > 0 ? sectionIds : ['00000000-0000-0000-0000-000000000000'])
     for (const t of (templatesData ?? []) as TemplateFileRow[]) {
       const list = templatesBySectionId.get(t.section_id!) ?? []
@@ -158,7 +160,9 @@ export default async function LibrariesPage({
                     <p className="text-xs text-slate">No files in this section yet.</p>
                   ) : (
                     <ul className="flex flex-col gap-1">
-                      {templateFiles.map((t) => (
+                      {templateFiles.map((t) => {
+                        const hasProposal = Array.isArray(t.mapping?.fields) && t.mapping.fields.length > 0
+                        return (
                         <li key={t.id} className="flex items-center justify-between text-sm">
                           <span className="text-ink">{t.name}</span>
                           <div className="flex items-center gap-3">
@@ -167,12 +171,21 @@ export default async function LibrariesPage({
                             }`}>
                               {t.mapping_status === 'confirmed' ? 'Confirmed' : 'Pending review'}
                             </span>
-                            <Link href={`/templates/${t.id}/mapping`} className="font-mono text-xs uppercase tracking-widest text-wine hover:text-brick">
-                              Review mapping →
-                            </Link>
+                            {hasProposal || t.mapping_status === 'confirmed' ? (
+                              <Link href={`/templates/${t.id}/mapping`} className="font-mono text-xs uppercase tracking-widest text-wine hover:text-brick">
+                                Review mapping →
+                              </Link>
+                            ) : (
+                              <form action={analyzeTemplate.bind(null, t.id)}>
+                                <button type="submit" className="font-mono text-xs uppercase tracking-widest text-wine hover:text-brick">
+                                  Analyze →
+                                </button>
+                              </form>
+                            )}
                           </div>
                         </li>
-                      ))}
+                        )
+                      })}
                       {bovFiles.map((b) => (
                         <li key={b.id} className="flex items-center justify-between text-sm">
                           <span className="text-ink">{b.name}</span>

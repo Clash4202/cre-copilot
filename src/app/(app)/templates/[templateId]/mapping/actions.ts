@@ -75,5 +75,6 @@ export async function confirmMapping(templateId: string) {
   }
 
   revalidatePath('/templates')
+  revalidatePath('/libraries')
   revalidatePath(`/templates/${templateId}/mapping`)
 }

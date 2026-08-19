@@ -92,5 +92,6 @@ export async function analyzeTemplate(templateId: string) {
   }
 
   revalidatePath('/templates')
+  revalidatePath('/libraries')
   revalidatePath(`/templates/${templateId}/mapping`)
 }
