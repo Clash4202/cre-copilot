@@ -28,7 +28,7 @@ export function DemoForm() {
       <SectionShell id="demo" className="py-24 text-center sm:py-32">
         <span className="mx-auto block h-1.5 w-1.5 rounded-full bg-wine" aria-hidden="true" />
         <h2 className="mt-3 font-display text-2xl font-medium tracking-tight text-ink">
-          Thanks — we&apos;ll be in touch
+          Thanks, we&apos;ll be in touch
         </h2>
         <p className="mt-2 text-sm text-slate">We usually respond within a day or two.</p>
       </SectionShell>

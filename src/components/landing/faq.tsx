@@ -1,5 +1,6 @@
 'use client'
 
+import { ParallaxImage } from './parallax-image'
 import { Reveal } from './reveal'
 import { SectionShell } from './section-shell'
 
@@ -10,7 +11,7 @@ const FAQS = [
   },
   {
     q: 'What file types are supported?',
-    a: "PDFs today, including scanned or image-only PDFs — those are automatically transcribed so they're still searchable.",
+    a: "PDFs today, including scanned or image-only PDFs. Those are automatically transcribed so they're still searchable.",
   },
   {
     q: 'How is this different from just using ChatGPT or Claude directly?',
@@ -20,7 +21,20 @@ const FAQS = [
 
 export function FAQ() {
   return (
-    <SectionShell id="faq" className="py-24 sm:py-32">
+    <SectionShell
+      id="faq"
+      className="py-24 sm:py-32"
+      bleed={
+        <div className="absolute inset-y-0 left-0 hidden w-64 xl:block">
+          <ParallaxImage
+            src="/images/ledger-texture.jpg"
+            className="absolute inset-0 opacity-[0.18] dark:opacity-[0.26]"
+            range={20}
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-paper/70 to-paper" />
+        </div>
+      }
+    >
       <div className="grid gap-10 sm:grid-cols-[minmax(0,320px)_1fr] sm:gap-16">
         <Reveal>
           <span className="font-mono text-xs uppercase tracking-widest text-slate">FAQ</span>

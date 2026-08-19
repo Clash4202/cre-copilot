@@ -27,14 +27,14 @@ export default async function ProjectsPage() {
 
       <Link
         href="/projects/all/chat"
-        className="rounded-md border border-wine/30 px-4 py-3 text-sm text-wine transition-colors hover:bg-wine/5"
+        className="rounded-md border border-wine/30 px-4 py-3 text-sm text-wine transition-colors hover:-translate-y-0.5 hover:bg-wine/5 hover:shadow-sm motion-reduce:transition-none motion-reduce:hover:translate-y-0"
       >
         Ask across everything →
       </Link>
 
       <form
         action={createProject}
-        className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-4 py-4"
+        className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-4 py-4 transition-colors focus-within:border-brass/50"
       >
         <input
           type="text"
@@ -52,7 +52,9 @@ export default async function ProjectsPage() {
       </form>
 
       {projects.length === 0 ? (
-        <p className="text-sm text-slate">No projects yet. Create your first one above.</p>
+        <div className="rounded-md border border-dashed border-hairline px-4 py-8 text-center">
+          <p className="text-sm text-slate">No projects yet. Create your first one above.</p>
+        </div>
       ) : (
         <ul className="flex flex-col gap-2">
           {projects.map((project) => {
@@ -61,10 +63,12 @@ export default async function ProjectsPage() {
               <li key={project.id}>
                 <Link
                   href={`/projects/${project.id}/vault`}
-                  className="flex items-center justify-between rounded-md border border-hairline px-4 py-3 text-sm transition-colors hover:border-forest"
+                  className="group flex items-center justify-between rounded-md border border-hairline px-4 py-3 text-sm transition hover:-translate-y-0.5 hover:border-forest hover:shadow-sm motion-reduce:transition-none motion-reduce:hover:translate-y-0"
                 >
-                  <span className="font-display text-base font-medium tracking-tight">{project.name}</span>
-                  <span className="font-mono text-xs text-slate">
+                  <span className="font-display text-base font-medium tracking-tight text-ink transition-colors group-hover:text-forest">
+                    {project.name}
+                  </span>
+                  <span className="rounded-full border border-hairline px-2 py-0.5 font-mono text-xs text-slate">
                     {count} document{count === 1 ? '' : 's'}
                   </span>
                 </Link>

@@ -1,5 +1,6 @@
 'use client'
 
+import { ParallaxImage } from './parallax-image'
 import { Reveal } from './reveal'
 import { SectionShell } from './section-shell'
 import { Skyline } from './skyline'
@@ -9,10 +10,19 @@ export function ClosingCTA() {
     <SectionShell
       className="py-24 text-center sm:py-32"
       bleed={
-        <Skyline
-          variant="closing"
-          className="absolute inset-x-0 bottom-0 h-[35%] w-full opacity-25"
-        />
+        <>
+          <ParallaxImage
+            src="/images/data-glow-abstract.jpg"
+            className="absolute inset-0 opacity-[0.1] dark:opacity-[0.18]"
+            range={18}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-paper via-transparent to-paper/80" />
+          <Skyline
+            variant="closing"
+            color="brass"
+            className="absolute inset-x-0 bottom-0 h-[35%] w-full opacity-[0.1]"
+          />
+        </>
       }
     >
       <Reveal>

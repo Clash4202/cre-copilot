@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   const chunkMatches = (matches ?? []) as ChunkMatch[]
   if (chunkMatches.length === 0) {
     return NextResponse.json({
-      answer: "I don't have any documents to search yet — upload something in the Vault first.",
+      answer: "I don't have any documents to search yet. Upload something in the Vault first.",
       citations: [],
     })
   }

@@ -13,7 +13,7 @@ export default function AllProjectsChatPage() {
         </Link>
       </div>
       <ChatInterface
-        eyebrow="Ask the Brain — All Projects"
+        eyebrow="Ask the Brain: All Projects"
         heading="Ask across everything"
         emptyStateText="Ask a question across every project's documents. Each answer's citations show which project the source came from."
       />

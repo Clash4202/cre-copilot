@@ -5,7 +5,7 @@ import { resolveTheme, THEME_STORAGE_KEY } from '@/lib/theme'
 import { ThemeProvider } from '@/components/landing/theme-provider'
 import { SiteNav } from '@/components/landing/site-nav'
 import { Hero } from '@/components/landing/hero'
-import { ExampleAnswer } from '@/components/landing/example-answer'
+import { ProductTour } from '@/components/landing/product-tour'
 import { HowItWorks } from '@/components/landing/how-it-works'
 import { WhatsComing } from '@/components/landing/whats-coming'
 import { FAQ } from '@/components/landing/faq'
@@ -30,7 +30,7 @@ export default async function HomePage() {
     <ThemeProvider initialTheme={initialTheme}>
       <SiteNav />
       <Hero />
-      <ExampleAnswer />
+      <ProductTour />
       <HowItWorks />
       <WhatsComing />
       <FAQ />

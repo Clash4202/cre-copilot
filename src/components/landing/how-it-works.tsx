@@ -6,7 +6,7 @@ import { SectionShell } from './section-shell'
 const STEPS = [
   {
     title: 'Upload',
-    body: 'Add leases, offering memoranda, T-12s, and market reports — PDFs, including scanned ones.',
+    body: 'Add leases, offering memoranda, T-12s, and market reports as PDFs, including scanned ones.',
   },
   {
     title: 'Ask',

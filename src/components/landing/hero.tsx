@@ -1,18 +1,23 @@
 'use client'
 
+import { ParallaxImage } from './parallax-image'
 import { Reveal } from './reveal'
 import { SectionShell } from './section-shell'
-import { Skyline } from './skyline'
 
 export function Hero() {
   return (
     <SectionShell
       className="pb-24 pt-40 sm:pb-32 sm:pt-48"
       bleed={
-        <Skyline
-          variant="hero"
-          className="absolute inset-x-0 bottom-0 h-[45%] w-full opacity-40 sm:h-[55%]"
-        />
+        <>
+          <ParallaxImage
+            src="/images/hero-skyline-glow.jpg"
+            priority
+            className="absolute inset-0 opacity-[0.16] dark:opacity-[0.24]"
+            range={24}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-paper via-transparent to-paper/80" />
+        </>
       }
     >
       <div className="flex max-w-3xl flex-col items-start gap-6 text-left">
@@ -29,7 +34,7 @@ export function Hero() {
         <Reveal delay={0.2}>
           <p className="max-w-xl text-base leading-relaxed text-slate sm:text-lg">
             Upload leases, offering memoranda, and market reports. Ask a question in plain
-            English and get an answer that cites the exact page it came from — not a guess.
+            English and get an answer that cites the exact page it came from, not a guess.
           </p>
         </Reveal>
         <Reveal delay={0.3}>

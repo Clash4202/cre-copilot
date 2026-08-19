@@ -2,81 +2,113 @@
 
 import { motion, useReducedMotion } from 'motion/react'
 
-interface Building {
-  x: number
-  width: number
-  height: number
+interface BaseBuilding {
+  src: string
+  /** width / height, from the building's trimmed silhouette. */
+  ratio: number
 }
 
-const HERO_BUILDINGS: Building[] = [
-  { x: 0, width: 46, height: 120 },
-  { x: 50, width: 30, height: 78 },
-  { x: 84, width: 54, height: 168 },
-  { x: 142, width: 38, height: 96 },
-  { x: 184, width: 62, height: 196 },
-  { x: 250, width: 34, height: 66 },
-  { x: 288, width: 46, height: 142 },
-  { x: 338, width: 42, height: 108 },
+const BASE_BUILDINGS: BaseBuilding[] = [
+  { src: '/images/buildings/building-4.png', ratio: 2.324 },
+  { src: '/images/buildings/building-1.png', ratio: 0.814 },
+  { src: '/images/buildings/building-6.png', ratio: 0.953 },
+  { src: '/images/buildings/building-5.png', ratio: 0.3 },
+  { src: '/images/buildings/building-3.png', ratio: 0.461 },
+  { src: '/images/buildings/building-2.png', ratio: 0.371 },
 ]
 
-const CLOSING_BUILDINGS: Building[] = HERO_BUILDINGS.slice(0, 5)
+interface SequenceEntry {
+  base: number
+  height: number
+  flip?: boolean
+}
 
-const BASELINE = 200
+// A long, hand-tuned sequence so the row reads as a wide skyline strip
+// instead of a small centered cluster. Reuses the 6 generated silhouettes
+// with mirroring and height variation so the repeats aren't obvious.
+const HERO_SEQUENCE: SequenceEntry[] = [
+  { base: 0, height: 60 },
+  { base: 1, height: 110 },
+  { base: 2, height: 85 },
+  { base: 3, height: 170 },
+  { base: 4, height: 150 },
+  { base: 5, height: 120 },
+  { base: 0, height: 50, flip: true },
+  { base: 2, height: 100, flip: true },
+  { base: 1, height: 90, flip: true },
+  { base: 3, height: 196, flip: true },
+  { base: 4, height: 130, flip: true },
+  { base: 5, height: 105, flip: true },
+]
+
+const CLOSING_SEQUENCE: SequenceEntry[] = HERO_SEQUENCE.slice(0, 8)
+
+type SkylineColor = 'forest' | 'brass' | 'moss'
+
+// Literal class strings (not template-interpolated) so Tailwind's static
+// scanner can find them.
+const COLOR_CLASS: Record<SkylineColor, string> = {
+  forest: 'bg-forest',
+  brass: 'bg-brass',
+  moss: 'bg-moss',
+}
 
 interface SkylineProps {
   variant?: 'hero' | 'closing'
+  /** Tuned per call site to whatever sits behind it (photo, gradient). */
+  color?: SkylineColor
   className?: string
 }
 
-// Buildings grow in once, on scroll-into-view, and then sit still — no
-// continuous looping motion. That keeps this accessible (no auto-playing
-// content to worry about under WCAG 2.2.2) and keeps the effect focused
-// on the one moment it's meant to land, instead of becoming background
-// noise the visitor has to tune out.
-export function Skyline({ variant = 'hero', className = '' }: SkylineProps) {
+// Each building grows in once, on scroll-into-view, and then sits still: no
+// continuous looping motion. Rendered as a single flat brand color via a CSS
+// mask (not the generated image's own colors) so it reads as quiet ambient
+// texture, not a literal illustration, and follows the light/dark theme
+// automatically since it's painted with a theme token, not baked pixels.
+// `mix-blend-overlay` lets it merge into whatever photo/gradient sits behind
+// it instead of sitting on top as a flat opaque sticker.
+export function Skyline({ variant = 'hero', color = 'forest', className = '' }: SkylineProps) {
   const shouldReduceMotion = useReducedMotion()
-  const buildings = variant === 'closing' ? CLOSING_BUILDINGS : HERO_BUILDINGS
-  // Derived from the building data itself so the viewBox can never drift out
-  // of sync with it and leave empty gutters at the edges.
-  const viewWidth = Math.max(...buildings.map((b) => b.x + b.width)) + 8
+  const sequence = variant === 'closing' ? CLOSING_SEQUENCE : HERO_SEQUENCE
 
   return (
-    <svg
-      viewBox={`0 0 ${viewWidth} ${BASELINE + 16}`}
-      className={className}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <line
-        x1={0}
-        y1={BASELINE}
-        x2={viewWidth}
-        y2={BASELINE}
-        stroke="var(--color-hairline)"
-        strokeWidth={1}
-      />
-      {buildings.map((building, i) => (
-        <motion.rect
-          key={building.x}
-          x={building.x}
-          width={building.width}
-          fill="none"
-          stroke="var(--color-forest)"
-          strokeWidth={1.5}
-          initial={
-            shouldReduceMotion
-              ? { y: BASELINE - building.height, height: building.height }
-              : { y: BASELINE, height: 0 }
-          }
-          whileInView={{ y: BASELINE - building.height, height: building.height }}
-          viewport={{ once: true, amount: 0.4 }}
-          transition={{
-            duration: shouldReduceMotion ? 0 : 1,
-            delay: shouldReduceMotion ? 0 : i * 0.09,
-            ease: [0.22, 1, 0.36, 1],
-          }}
-        />
-      ))}
-    </svg>
+    <div className={`flex items-end ${className}`} aria-hidden="true">
+      <div className="flex w-full origin-bottom scale-90 items-end justify-between gap-1.5 border-b border-hairline/60 blur-[2px] sm:scale-100 sm:gap-2 sm:blur-[3px]">
+        {sequence.map((entry, i) => {
+          const building = BASE_BUILDINGS[entry.base]
+          const width = Math.round(entry.height * building.ratio)
+          return (
+            <motion.div
+              key={`${entry.base}-${i}`}
+              className="relative overflow-hidden"
+              style={{ width }}
+              initial={shouldReduceMotion ? { height: entry.height } : { height: 0 }}
+              whileInView={{ height: entry.height }}
+              viewport={{ once: true, amount: 0.4 }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.9,
+                delay: shouldReduceMotion ? 0 : i * 0.07,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+            >
+              <div
+                className={`absolute bottom-0 left-0 mix-blend-overlay ${COLOR_CLASS[color]}`}
+                style={{
+                  width,
+                  height: entry.height,
+                  maskImage: `url(${building.src})`,
+                  WebkitMaskImage: `url(${building.src})`,
+                  maskSize: '100% 100%',
+                  WebkitMaskSize: '100% 100%',
+                  maskRepeat: 'no-repeat',
+                  WebkitMaskRepeat: 'no-repeat',
+                  transform: entry.flip ? 'scaleX(-1)' : undefined,
+                }}
+              />
+            </motion.div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
