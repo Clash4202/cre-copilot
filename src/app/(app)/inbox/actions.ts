@@ -69,50 +69,64 @@ export async function stageInboxUpload(formData: FormData) {
     throw new Error('Upload failed. Please try again.')
   }
 
-  let xlsxKind: 't12' | 'rent_roll' | 'unknown' | null = null
-  let workbook: ExcelJS.Workbook | null = null
-
-  if (lowerName.endsWith('.xlsx')) {
-    const arrayBuffer = await file.arrayBuffer()
-    workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(arrayBuffer)
-    const firstSheet = workbook.worksheets[0]
-    const rows = firstSheet ? readWorksheetRows(firstSheet) : []
-    xlsxKind = detectDocumentKind(rows)
-  }
-
-  const detectedType = classifyInboxFile(file.name, xlsxKind)
-
+  // Everything from here to the insert is enrichment: parsing the file and asking the model where it
+  // should go. All of it can throw on inputs and conditions we do not control — a corrupt .xlsx or
+  // .pptx, an Anthropic network error or 429, or parseSectionMatchResponse rejecting malformed model
+  // output by design. None of that is worth losing the user's upload over: the file is already in the
+  // bucket, and the confirm screen lets them pick a destination by hand. So a failure here degrades
+  // to an empty proposal and the item is still created, per the design spec's graceful-degradation
+  // requirement. Without this, a throw left a file in the inbox bucket that no row referenced and no
+  // item for the user to retry.
+  let detectedType = classifyInboxFile(file.name, null)
   let proposal: Record<string, unknown> = {}
 
-  if (detectedType === 'property_document' && workbook) {
-    const firstSheet = workbook.worksheets[0]
-    const rows = firstSheet ? readWorksheetRows(firstSheet) : []
-    const propertyName = await extractPropertyName(rows.slice(0, 10))
+  try {
+    let xlsxKind: 't12' | 'rent_roll' | 'unknown' | null = null
+    let workbook: ExcelJS.Workbook | null = null
 
-    const { data: projectsData } = await supabase.from('projects').select('id, name').eq('user_id', user.id)
-    const matchedProject = propertyName ? matchProjectByName(propertyName, projectsData ?? []) : null
-
-    proposal = {
-      propertyName: propertyName ?? '',
-      matchedProjectId: matchedProject?.id ?? null,
-      matchedProjectName: matchedProject?.name ?? null,
+    if (lowerName.endsWith('.xlsx')) {
+      const arrayBuffer = await file.arrayBuffer()
+      workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(arrayBuffer)
+      const firstSheet = workbook.worksheets[0]
+      const rows = firstSheet ? readWorksheetRows(firstSheet) : []
+      xlsxKind = detectDocumentKind(rows)
     }
-  } else if (detectedType === 'candidate_template' && workbook) {
-    const structure = describeWorkbookStructure(workbook)
-    const structureSummary = JSON.stringify(structure).slice(0, MAX_STRUCTURE_SUMMARY_CHARS)
 
-    const libraries = await loadLibrarySummaries(supabase, user.id)
-    const match = await proposeSectionMatch(libraries, 'template', structureSummary)
-    proposal = { ...match }
-  } else if (detectedType === 'candidate_bov') {
-    const arrayBuffer = await file.arrayBuffer()
-    const slideTexts = await extractPptxSlideText(Buffer.from(arrayBuffer))
-    const structureSummary = slideTexts.join(' | ').slice(0, MAX_STRUCTURE_SUMMARY_CHARS)
+    detectedType = classifyInboxFile(file.name, xlsxKind)
 
-    const libraries = await loadLibrarySummaries(supabase, user.id)
-    const match = await proposeSectionMatch(libraries, 'bov', structureSummary)
-    proposal = { ...match }
+    if (detectedType === 'property_document' && workbook) {
+      const firstSheet = workbook.worksheets[0]
+      const rows = firstSheet ? readWorksheetRows(firstSheet) : []
+      const propertyName = await extractPropertyName(rows.slice(0, 10))
+
+      const { data: projectsData } = await supabase.from('projects').select('id, name').eq('user_id', user.id)
+      const matchedProject = propertyName ? matchProjectByName(propertyName, projectsData ?? []) : null
+
+      proposal = {
+        propertyName: propertyName ?? '',
+        matchedProjectId: matchedProject?.id ?? null,
+        matchedProjectName: matchedProject?.name ?? null,
+      }
+    } else if (detectedType === 'candidate_template' && workbook) {
+      const structure = describeWorkbookStructure(workbook)
+      const structureSummary = JSON.stringify(structure).slice(0, MAX_STRUCTURE_SUMMARY_CHARS)
+
+      const libraries = await loadLibrarySummaries(supabase, user.id)
+      const match = await proposeSectionMatch(libraries, 'template', structureSummary)
+      proposal = { ...match }
+    } else if (detectedType === 'candidate_bov') {
+      const arrayBuffer = await file.arrayBuffer()
+      const slideTexts = await extractPptxSlideText(Buffer.from(arrayBuffer))
+      const structureSummary = slideTexts.join(' | ').slice(0, MAX_STRUCTURE_SUMMARY_CHARS)
+
+      const libraries = await loadLibrarySummaries(supabase, user.id)
+      const match = await proposeSectionMatch(libraries, 'bov', structureSummary)
+      proposal = { ...match }
+    }
+  } catch (err) {
+    console.error('Could not build an inbox proposal for', file.name, err)
+    proposal = {}
   }
 
   const { error: insertError } = await supabase.from('inbox_items').insert({
@@ -124,6 +138,11 @@ export async function stageInboxUpload(formData: FormData) {
   })
   if (insertError) {
     console.error('Failed to create inbox item:', insertError)
+    // Nothing references the uploaded object now, so drop it rather than leaving it orphaned.
+    const { error: removeError } = await supabase.storage.from('inbox').remove([storagePath])
+    if (removeError) {
+      console.error('Failed to clean up orphaned inbox upload', storagePath, removeError)
+    }
     throw new Error('Could not stage this file for review. Please try again.')
   }
 

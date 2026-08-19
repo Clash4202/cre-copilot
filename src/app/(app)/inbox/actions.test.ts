@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import JSZip from 'jszip'
 
 // The inbox actions talk to Supabase and to Anthropic. The Supabase client is replaced with an
 // in-memory fake below whose tables and storage buckets are real state, so these tests assert what
@@ -10,8 +11,14 @@ vi.mock('@/lib/supabase/server', () => ({ createClient: async () => fake.client 
 vi.mock('@/app/(app)/projects/[projectId]/vault/actions', () => ({
   ingestGeneralDocument: vi.fn(async () => {}),
 }))
+vi.mock('@/lib/section-match', () => ({
+  proposeSectionMatch: vi.fn(async () => {
+    throw new Error('proposeSectionMatch was not stubbed for this test')
+  }),
+}))
 
 import { stageInboxUpload, confirmInboxItem } from './actions'
+import { proposeSectionMatch } from '@/lib/section-match'
 
 type Row = Record<string, unknown>
 
@@ -321,5 +328,58 @@ describe('stageInboxUpload — file type allowlist', () => {
     expect(items).toHaveLength(1)
     expect(items[0].detected_type).toBe('general_document')
     expect(fake.objects.size).toBe(1)
+  })
+})
+
+describe('stageInboxUpload — degrades to a manual destination instead of losing the upload', () => {
+  it('still creates the inbox item with an empty proposal when the file cannot be parsed', async () => {
+    const formData = new FormData()
+    formData.set(
+      'file',
+      new File(['not actually a zip'], 'deck.pptx', {
+        type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      })
+    )
+
+    await stageInboxUpload(formData)
+
+    const items = fake.rows('inbox_items')
+    expect(items).toHaveLength(1)
+    expect(items[0].detected_type).toBe('candidate_bov')
+    expect(items[0].proposal).toEqual({})
+    // The staged file must survive so the user can still confirm a destination by hand.
+    expect(fake.objects.size).toBe(1)
+  })
+
+  it('still creates the inbox item with an empty proposal when the AI match call fails', async () => {
+    const zip = new JSZip()
+    zip.file('ppt/slides/slide1.xml', '<p:sld><a:t>Broker Opinion of Value</a:t></p:sld>')
+    const pptx = await zip.generateAsync({ type: 'nodebuffer' })
+
+    vi.mocked(proposeSectionMatch).mockRejectedValueOnce(
+      Object.assign(new Error('429 rate_limit_error'), { status: 429 })
+    )
+
+    const formData = new FormData()
+    formData.set('file', new File([new Uint8Array(pptx)], 'bov.pptx'))
+
+    await stageInboxUpload(formData)
+
+    expect(proposeSectionMatch).toHaveBeenCalledTimes(1)
+    const items = fake.rows('inbox_items')
+    expect(items).toHaveLength(1)
+    expect(items[0].proposal).toEqual({})
+    expect(fake.objects.size).toBe(1)
+  })
+
+  it('removes the orphaned staged file when the inbox row itself cannot be written', async () => {
+    fake.failInserts.add('inbox_items')
+
+    const formData = new FormData()
+    formData.set('file', new File(['%PDF-1.7'], 'offering-memo.pdf', { type: 'application/pdf' }))
+
+    await expect(stageInboxUpload(formData)).rejects.toThrow(/stage this file/)
+
+    expect(fake.objects.size).toBe(0)
   })
 })
