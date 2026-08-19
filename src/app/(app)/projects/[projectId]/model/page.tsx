@@ -49,11 +49,15 @@ export default async function ModelGenerationPage({
 
       {templates.length === 0 ? (
         <p className="text-sm text-slate">
-          No confirmed templates yet. Upload and confirm one on the{' '}
-          <a href="/templates" className="text-wine hover:text-brick">
-            Templates
-          </a>{' '}
-          page first.
+          No confirmed templates yet. Add one from the{' '}
+          <a href="/inbox" className="text-wine hover:text-brick">
+            Inbox
+          </a>
+          , then analyze and confirm its mapping in{' '}
+          <a href="/libraries" className="text-wine hover:text-brick">
+            Libraries
+          </a>
+          .
         </p>
       ) : (
         <form action={generateForProject} className="flex flex-col gap-6">

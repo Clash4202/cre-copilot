@@ -90,7 +90,11 @@ export default async function ProjectVaultPage({
 
       {docCount === 0 ? (
         <p className="text-sm text-slate">
-          No documents yet. Upload your first file above to start building this project&apos;s vault.
+          No documents yet. Add your first file from the{' '}
+          <Link href="/inbox" className="text-wine hover:text-brick">
+            Inbox
+          </Link>{' '}
+          to start building this project&apos;s vault.
         </p>
       ) : (
         <table className="w-full text-left text-sm">
