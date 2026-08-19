@@ -19,6 +19,7 @@ vi.mock('@/lib/section-match', () => ({
 
 import { stageInboxUpload, confirmInboxItem } from './actions'
 import { proposeSectionMatch } from '@/lib/section-match'
+import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
 
 type Row = Record<string, unknown>
 
@@ -212,6 +213,28 @@ function seedPendingTemplate() {
   fake.putObject('inbox', 'user-1/staged-office-dcf.xlsx', new Blob(['xlsx bytes']))
 }
 
+function seedPendingGeneralDocument() {
+  fake.seed('projects', [{ id: 'proj-1', user_id: 'user-1', name: 'Cedar Point' }])
+  fake.seed('inbox_items', [
+    {
+      id: 'item-doc',
+      user_id: 'user-1',
+      file_name: 'offering-memo.pdf',
+      storage_path: 'user-1/staged-offering-memo.pdf',
+      detected_type: 'general_document',
+      status: 'pending_review',
+    },
+  ])
+  fake.putObject('inbox', 'user-1/staged-offering-memo.pdf', new Blob(['%PDF-1.7']))
+}
+
+function generalDocumentFormData(): FormData {
+  const formData = new FormData()
+  formData.set('propertyName', 'Cedar Point')
+  formData.set('existingProjectId', 'proj-1')
+  return formData
+}
+
 beforeEach(() => {
   fake = new FakeSupabase()
   vi.clearAllMocks()
@@ -296,6 +319,49 @@ describe('confirmInboxItem — the user can overrule the proposed destination', 
         })
       )
     ).rejects.toThrow(/Library not found/)
+  })
+})
+
+describe('confirmInboxItem — a failed ingestion cannot be retried into duplicate data', () => {
+  it('closes the inbox item out before ingestion, so an ingestion failure leaves exactly one document', async () => {
+    seedPendingGeneralDocument()
+    vi.mocked(ingestGeneralDocument).mockRejectedValueOnce(new Error('embedding API hiccup'))
+
+    await expect(confirmInboxItem('item-doc', generalDocumentFormData())).rejects.toThrow(/hiccup/)
+
+    // The document row and its project link exist; the document's own status column is what tells
+    // the Vault the ingestion failed, so the inbox item has nothing left to say.
+    expect(fake.rows('documents')).toHaveLength(1)
+    expect(fake.rows('project_documents')).toHaveLength(1)
+    expect(fake.rows('inbox_items')[0].status).toBe('confirmed')
+    expect(fake.objects.has('inbox/user-1/staged-offering-memo.pdf')).toBe(false)
+  })
+
+  it('refuses a second confirm after a failed ingestion instead of duplicating the document', async () => {
+    seedPendingGeneralDocument()
+    vi.mocked(ingestGeneralDocument).mockRejectedValueOnce(new Error('embedding API hiccup'))
+
+    await expect(confirmInboxItem('item-doc', generalDocumentFormData())).rejects.toThrow(/hiccup/)
+    const documentsAfterFirst = fake.rows('documents').length
+
+    // Before the fix this second call produced a second bucket copy, a second documents row, and a
+    // second project link, with the first stranded as `failed`.
+    await expect(confirmInboxItem('item-doc', generalDocumentFormData())).rejects.toThrow(
+      /read the staged file/
+    )
+
+    expect(fake.rows('documents')).toHaveLength(documentsAfterFirst)
+    expect(fake.rows('project_documents')).toHaveLength(1)
+    expect(fake.rows('projects')).toHaveLength(1)
+  })
+
+  it('closes the inbox item out when a template is filed', async () => {
+    seedPendingTemplate()
+
+    await confirmInboxItem('item-1', templateFormData())
+
+    expect(fake.rows('inbox_items')[0].status).toBe('confirmed')
+    expect(fake.objects.has('inbox/user-1/staged-office-dcf.xlsx')).toBe(false)
   })
 })
 

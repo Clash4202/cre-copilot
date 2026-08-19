@@ -165,6 +165,24 @@ async function copyFromInboxTo(
   }
 }
 
+// confirmInboxItem writes several rows across several tables with no transaction around them, so the
+// window between "the destination rows exist" and "the inbox item is closed out" is a duplication
+// hazard: while the item is still pending_review and the staged file is still in the bucket, another
+// Confirm re-runs the whole branch and produces a second bucket copy, a second row, and a second
+// project link. Closing the item out the moment its destination rows exist shrinks that window to
+// nothing and makes any later step (ingestion, which is the slowest and most failure-prone part)
+// unable to reopen it — a failure there is already reported through the document's own status
+// column, and with the staged file gone a repeat Confirm fails at the copy step before writing
+// anything.
+async function closeOutInboxItem(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  itemId: string,
+  storagePath: string
+) {
+  await supabase.storage.from('inbox').remove([storagePath])
+  await supabase.from('inbox_items').update({ status: 'confirmed' }).eq('id', itemId)
+}
+
 // The confirm form ships the AI's proposed library/section ids alongside the editable name fields.
 // Those ids only mean anything while the user leaves the proposed name alone — once they retype it
 // they are asking for a different destination, so the id must be ignored and the named
@@ -251,6 +269,8 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
       .from('project_documents')
       .insert({ project_id: projectId, document_id: newDocument.id })
     if (linkError) throw new Error('Could not link the document to the project.')
+
+    await closeOutInboxItem(supabase, itemId, item.storage_path)
   } else if (item.detected_type === 'candidate_template' || item.detected_type === 'candidate_bov') {
     const libraryName = formData.get('libraryName')
     const sectionName = formData.get('sectionName')
@@ -323,6 +343,8 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
       ...(table === 'templates' ? { asset_type: 'unspecified' } : {}),
     })
     if (fileError) throw new Error('Could not save the file.')
+
+    await closeOutInboxItem(supabase, itemId, item.storage_path)
   } else {
     const propertyName = formData.get('propertyName')
     const existingProjectId = formData.get('existingProjectId')
@@ -370,11 +392,13 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
       .insert({ project_id: projectId, document_id: newDocument.id })
     if (linkError) throw new Error('Could not link the document to the project.')
 
+    // Closed out before ingestion, not after: ingestGeneralDocument marks the document `failed` and
+    // rethrows, and the Vault reads that status, so there is nothing left for the inbox item to
+    // communicate — while leaving it open would let a retry duplicate everything above.
+    await closeOutInboxItem(supabase, itemId, item.storage_path)
+
     await ingestGeneralDocument(supabase, newDocument.id, destinationPath, item.file_name)
   }
-
-  await supabase.storage.from('inbox').remove([item.storage_path])
-  await supabase.from('inbox_items').update({ status: 'confirmed' }).eq('id', itemId)
 
   revalidatePath('/inbox')
   revalidatePath('/libraries')
