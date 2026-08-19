@@ -11,7 +11,7 @@ vi.mock('@/app/(app)/projects/[projectId]/vault/actions', () => ({
   ingestGeneralDocument: vi.fn(async () => {}),
 }))
 
-import { confirmInboxItem } from './actions'
+import { stageInboxUpload, confirmInboxItem } from './actions'
 
 type Row = Record<string, unknown>
 
@@ -289,5 +289,37 @@ describe('confirmInboxItem — the user can overrule the proposed destination', 
         })
       )
     ).rejects.toThrow(/Library not found/)
+  })
+})
+
+describe('stageInboxUpload — file type allowlist', () => {
+  it('rejects a file type the app cannot parse, before anything reaches storage', async () => {
+    const formData = new FormData()
+    formData.set('file', new File(['MZ binary'], 'payload.exe', { type: 'application/octet-stream' }))
+
+    await expect(stageInboxUpload(formData)).rejects.toThrow(/supported/)
+
+    expect(fake.objects.size).toBe(0)
+    expect(fake.rows('inbox_items')).toHaveLength(0)
+  })
+
+  it('rejects a file whose content type is allowed-looking but whose extension is not', async () => {
+    const formData = new FormData()
+    formData.set('file', new File(['#!/bin/sh'], 'run.sh', { type: 'application/x-sh' }))
+
+    await expect(stageInboxUpload(formData)).rejects.toThrow(/supported/)
+    expect(fake.rows('inbox_items')).toHaveLength(0)
+  })
+
+  it('accepts a PDF and stages it', async () => {
+    const formData = new FormData()
+    formData.set('file', new File(['%PDF-1.7'], 'offering-memo.pdf', { type: 'application/pdf' }))
+
+    await stageInboxUpload(formData)
+
+    const items = fake.rows('inbox_items')
+    expect(items).toHaveLength(1)
+    expect(items[0].detected_type).toBe('general_document')
+    expect(fake.objects.size).toBe(1)
   })
 })

@@ -16,6 +16,16 @@ import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/ac
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB, matches existing Vault upload limit
 const MAX_STRUCTURE_SUMMARY_CHARS = 20_000 // caps prompt size for very large templates
 
+// The Inbox is the only ingestion entry point in the app, so this is the only place anything is
+// stopped before it reaches storage — the `accept=` on the upload form is a client-side hint that a
+// direct server-action post ignores. The list mirrors what the app can actually parse downstream
+// (PDF/plain text via extractTextFromFile, .xlsx via ExcelJS, .pptx via extractPptxSlideText).
+// Gated on the extension rather than the reported content type because the extension is what
+// classifyInboxFile and every parse branch below already route on; letting a `.exe` in under a
+// borrowed `application/pdf` content type would put an unparseable file in the bucket and, on
+// confirm, a `failed` document row attached to a real project.
+const ALLOWED_UPLOAD_EXTENSIONS = ['.pdf', '.txt', '.xlsx', '.pptx']
+
 function sanitizeFilename(name: string): string {
   return name.replace(/[/\\]/g, '_').replace(/[\x00-\x1f]/g, '').slice(0, 200) || 'upload'
 }
@@ -46,6 +56,10 @@ export async function stageInboxUpload(formData: FormData) {
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) throw new Error('No file provided')
   if (file.size > MAX_FILE_BYTES) throw new Error('File is too large (max 50MB)')
+  const lowerName = file.name.toLowerCase()
+  if (!ALLOWED_UPLOAD_EXTENSIONS.some((ext) => lowerName.endsWith(ext))) {
+    throw new Error('Only PDF, plain text, .xlsx, and .pptx files are supported')
+  }
 
   const safeName = sanitizeFilename(file.name)
   const storagePath = `${user.id}/${randomUUID()}-${safeName}`
@@ -55,11 +69,10 @@ export async function stageInboxUpload(formData: FormData) {
     throw new Error('Upload failed. Please try again.')
   }
 
-  const lower = file.name.toLowerCase()
   let xlsxKind: 't12' | 'rent_roll' | 'unknown' | null = null
   let workbook: ExcelJS.Workbook | null = null
 
-  if (lower.endsWith('.xlsx')) {
+  if (lowerName.endsWith('.xlsx')) {
     const arrayBuffer = await file.arrayBuffer()
     workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(arrayBuffer)
