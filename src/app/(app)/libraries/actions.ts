@@ -2,9 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-
-const MAX_NAME_CHARS = 200
-const MAX_DESCRIPTION_CHARS = 500
+import { MAX_NAME_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/library-limits'
 
 export async function createLibrary(formData: FormData) {
   const supabase = await createClient()

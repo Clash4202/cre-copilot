@@ -320,6 +320,21 @@ describe('confirmInboxItem — the user can overrule the proposed destination', 
       )
     ).rejects.toThrow(/Library not found/)
   })
+
+  it('applies the same length caps to a proposed section name that the manual form enforces', async () => {
+    seedPendingTemplate()
+    const tooLong = 'x'.repeat(201)
+
+    await expect(
+      confirmInboxItem(
+        'item-1',
+        templateFormData({ sectionName: tooLong, proposedSectionName: tooLong })
+      )
+    ).rejects.toThrow(/too long/)
+
+    expect(fake.rows('library_sections')).toHaveLength(1)
+    expect(fake.rows('templates')).toHaveLength(0)
+  })
 })
 
 describe('confirmInboxItem — a failed ingestion cannot be retried into duplicate data', () => {

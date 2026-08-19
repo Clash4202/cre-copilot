@@ -12,6 +12,7 @@ import { extractPropertyName, matchProjectByName } from '@/lib/property-match'
 import { proposeSectionMatch, type LibrarySummary } from '@/lib/section-match'
 import { extractPptxSlideText } from '@/lib/pptx-text'
 import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
+import { MAX_NAME_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/library-limits'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB, matches existing Vault upload limit
 const MAX_STRUCTURE_SUMMARY_CHARS = 20_000 // caps prompt size for very large templates
@@ -282,6 +283,11 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
     if (typeof libraryName !== 'string' || !libraryName.trim()) throw new Error('Give the library a name')
     if (typeof sectionName !== 'string' || !sectionName.trim()) throw new Error('Give the section a name')
     if (typeof sectionDescription !== 'string') throw new Error('Description is required')
+    // Same caps createLibrary/createSection enforce: these rows can be created from a model-authored
+    // name, so the cap has to hold on this path too.
+    if (libraryName.length > MAX_NAME_CHARS) throw new Error('Library name is too long')
+    if (sectionName.length > MAX_NAME_CHARS) throw new Error('Section name is too long')
+    if (sectionDescription.length > MAX_DESCRIPTION_CHARS) throw new Error('Description is too long')
 
     const keepProposedLibrary = matchesProposedName(libraryName, proposedLibraryName)
     const keepProposedSection = matchesProposedName(sectionName, proposedSectionName)
