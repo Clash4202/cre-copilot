@@ -101,6 +101,11 @@ export default async function InboxPage() {
                   <>
                     <input type="hidden" name="existingLibraryId" value={(item.proposal.libraryId as string) ?? ''} />
                     <input type="hidden" name="existingSectionId" value={(item.proposal.sectionId as string) ?? ''} />
+                    {/* The proposed names travel with the ids so confirmInboxItem can tell an
+                        untouched proposal from one the user edited; an edited name must create a
+                        new library/section rather than silently filing into the proposed one. */}
+                    <input type="hidden" name="proposedLibraryName" value={(item.proposal.libraryName as string) ?? ''} />
+                    <input type="hidden" name="proposedSectionName" value={(item.proposal.sectionName as string) ?? ''} />
                     <label className="text-xs text-slate">Library</label>
                     <input
                       type="text"

@@ -1416,6 +1416,16 @@ async function copyFromInboxTo(
   }
 }
 
+// The confirm form ships the AI's proposed library/section ids alongside the editable name fields.
+// Those ids only mean anything while the user leaves the proposed name alone — once they retype it
+// they are asking for a different destination, so the id must be ignored and the named
+// library/section created instead. Compared trimmed and case-insensitively so incidental whitespace
+// or capitalization does not read as a deliberate edit.
+function matchesProposedName(submitted: string, proposed: FormDataEntryValue | null): boolean {
+  if (typeof proposed !== 'string') return false
+  return submitted.trim().toLowerCase() === proposed.trim().toLowerCase()
+}
+
 export async function confirmInboxItem(itemId: string, formData: FormData) {
   const supabase = await createClient()
   const {
@@ -1491,12 +1501,18 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
     const sectionDescription = formData.get('sectionDescription')
     const existingLibraryId = formData.get('existingLibraryId')
     const existingSectionId = formData.get('existingSectionId')
+    const proposedLibraryName = formData.get('proposedLibraryName')
+    const proposedSectionName = formData.get('proposedSectionName')
     if (typeof libraryName !== 'string' || !libraryName.trim()) throw new Error('Give the library a name')
     if (typeof sectionName !== 'string' || !sectionName.trim()) throw new Error('Give the section a name')
     if (typeof sectionDescription !== 'string') throw new Error('Description is required')
 
+    const keepProposedLibrary = matchesProposedName(libraryName, proposedLibraryName)
+    const keepProposedSection = matchesProposedName(sectionName, proposedSectionName)
+
     let libraryId: string
-    if (typeof existingLibraryId === 'string' && existingLibraryId) {
+    let createdNewLibrary = false
+    if (typeof existingLibraryId === 'string' && existingLibraryId && keepProposedLibrary) {
       const { data: ownedLibrary } = await supabase
         .from('libraries')
         .select('id')
@@ -1506,6 +1522,7 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
       if (!ownedLibrary) throw new Error('Library not found')
       libraryId = ownedLibrary.id
     } else {
+      createdNewLibrary = true
       const { data: newLibrary, error: libraryError } = await supabase
         .from('libraries')
         .insert({ user_id: user.id, name: libraryName.trim() })
@@ -1515,8 +1532,10 @@ export async function confirmInboxItem(itemId: string, formData: FormData) {
       libraryId = newLibrary.id
     }
 
+    // A proposed section id only exists inside the proposed library. If the library fell through to
+    // create-new, that id can never be reused here, whatever the section name says.
     let sectionId: string
-    if (typeof existingSectionId === 'string' && existingSectionId) {
+    if (typeof existingSectionId === 'string' && existingSectionId && keepProposedSection && !createdNewLibrary) {
       const { data: ownedSection } = await supabase
         .from('library_sections')
         .select('id, library_id, libraries!inner(user_id)')
@@ -1737,6 +1756,11 @@ export default async function InboxPage() {
                   <>
                     <input type="hidden" name="existingLibraryId" value={(item.proposal.libraryId as string) ?? ''} />
                     <input type="hidden" name="existingSectionId" value={(item.proposal.sectionId as string) ?? ''} />
+                    {/* The proposed names travel with the ids so confirmInboxItem can tell an
+                        untouched proposal from one the user edited; an edited name must create a
+                        new library/section rather than silently filing into the proposed one. */}
+                    <input type="hidden" name="proposedLibraryName" value={(item.proposal.libraryName as string) ?? ''} />
+                    <input type="hidden" name="proposedSectionName" value={(item.proposal.sectionName as string) ?? ''} />
                     <label className="text-xs text-slate">Library</label>
                     <input
                       type="text"
