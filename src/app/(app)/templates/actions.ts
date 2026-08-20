@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs'
 import { createClient } from '@/lib/supabase/server'
 import { describeWorkbookStructure } from '@/lib/excel-structure'
 import { proposeMapping } from '@/lib/template-mapping'
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit'
 
 const MAX_TEMPLATE_FILE_BYTES = 20 * 1024 * 1024 // 20MB — blank templates, smaller than a document upload
 const MAX_NAME_CHARS = 200
@@ -54,12 +55,16 @@ export async function uploadTemplate(formData: FormData) {
   revalidatePath('/templates')
 }
 
-export async function analyzeTemplate(templateId: string) {
+export async function analyzeTemplate(templateId: string): Promise<{ error: string } | undefined> {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
+
+  if (!(await checkRateLimit(supabase, 'template_analyze'))) {
+    return { error: rateLimitMessage('template_analyze') }
+  }
 
   const { data: template, error: fetchError } = await supabase
     .from('templates')
