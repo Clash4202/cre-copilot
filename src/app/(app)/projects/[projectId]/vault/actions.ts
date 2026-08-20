@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import ExcelJS from 'exceljs'
 import { createClient } from '@/lib/supabase/server'
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit'
 import { extractTextFromFile, extractPdfPages, isPageScanned, spliceOcrPages } from '@/lib/parse'
 import { exceedsOcrLimits, transcribeScannedPdf } from '@/lib/ocr'
 import { chunkText } from '@/lib/chunk'
@@ -45,6 +46,13 @@ export async function ingestGeneralDocument(
         const limitError = exceedsOcrLimits(blob.size, pages.length)
         if (limitError) {
           throw new Error(limitError)
+        }
+        // Whether a PDF needs OCR is only knowable after parsing it, so this check necessarily runs
+        // mid-ingestion. A rejection here lands the document in `failed` through the catch below and
+        // the user re-uploads to retry. A proper resume path would need a `pending_ocr` state and is
+        // deliberately out of scope (see the design spec, "Known rough edge").
+        if (!(await checkRateLimit(supabase, 'ocr'))) {
+          throw new Error(rateLimitMessage('ocr'))
         }
         const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
         const splicedPages = spliceOcrPages(pages, ocrPages)
@@ -109,6 +117,13 @@ export async function uploadDocument(projectId: string, formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
+
+  // No UI renders this action any more (uploads go through the Inbox), but it is still a live
+  // server-action endpoint, so it gets the same ingestion budget as the Inbox path. It throws
+  // rather than returning a message because there is no form here to display one.
+  if (!(await checkRateLimit(supabase, 'ingest'))) {
+    throw new Error(rateLimitMessage('ingest'))
+  }
 
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
