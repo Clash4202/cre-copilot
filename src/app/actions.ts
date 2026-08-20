@@ -3,7 +3,7 @@
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { checkInMemoryRateLimit } from '@/lib/rate-limit'
 import { sendDemoRequestEmail } from '@/lib/resend'
 
 export async function signOut() {
@@ -28,7 +28,7 @@ export async function requestDemo(data: {
 }): Promise<{ success: boolean }> {
   const ip = ((await headers()).get('x-forwarded-for') ?? 'unknown').split(',')[0].trim()
 
-  if (!checkRateLimit(`demo:${ip}`, DEMO_REQUEST_RATE_LIMIT, DEMO_REQUEST_RATE_WINDOW_MS)) {
+  if (!checkInMemoryRateLimit(`demo:${ip}`, DEMO_REQUEST_RATE_LIMIT, DEMO_REQUEST_RATE_WINDOW_MS)) {
     return { success: false }
   }
 
