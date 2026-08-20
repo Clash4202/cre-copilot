@@ -200,12 +200,22 @@ function matchesProposedName(submitted: string, proposed: FormDataEntryValue | n
   return submitted.trim().toLowerCase() === proposed.trim().toLowerCase()
 }
 
-export async function confirmInboxItem(itemId: string, formData: FormData) {
+export async function confirmInboxItem(
+  itemId: string,
+  formData: FormData
+): Promise<{ error: string } | undefined> {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
+
+  // Confirming files the document and immediately ingests it (embeddings, and OCR if the PDF is
+  // scanned). Checked before any rows are created so a rejection leaves the item pending rather
+  // than half-filed.
+  if (!(await checkRateLimit(supabase, 'ingest'))) {
+    return { error: rateLimitMessage('ingest') }
+  }
 
   const { data: item } = await supabase
     .from('inbox_items')

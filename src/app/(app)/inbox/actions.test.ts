@@ -349,6 +349,20 @@ describe('confirmInboxItem — the user can overrule the proposed destination', 
     expect(fake.rows('library_sections')).toHaveLength(1)
     expect(fake.rows('templates')).toHaveLength(0)
   })
+
+  it('refuses to confirm an item once the ingestion limit is reached', async () => {
+    seedPendingTemplate()
+    fake.rateLimitAllows = false
+
+    const result = await confirmInboxItem('item-1', templateFormData())
+
+    expect(result?.error).toMatch(/limit reached/i)
+    // seedPendingTemplate already seeds one library (lib-1); nothing new was filed, so the count
+    // stays at 1 rather than growing, and the user can confirm it later.
+    expect(fake.rows('libraries')).toHaveLength(1)
+    const item = fake.rows('inbox_items').find((i) => i.id === 'item-1')
+    expect(item?.status).toBe('pending_review')
+  })
 })
 
 describe('confirmInboxItem — a failed ingestion cannot be retried into duplicate data', () => {

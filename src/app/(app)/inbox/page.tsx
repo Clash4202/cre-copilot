@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { confirmInboxItem } from './actions'
 import { InboxUploadForm } from './inbox-upload-form'
+import { InboxConfirmForm } from './inbox-confirm-form'
 
 interface InboxItemRow {
   id: string
@@ -54,7 +54,7 @@ export default async function InboxPage() {
                 </span>
               </div>
 
-              <form action={confirmInboxItem.bind(null, item.id)} className="flex flex-col gap-2">
+              <InboxConfirmForm itemId={item.id}>
                 {(item.detected_type === 'property_document' || item.detected_type === 'general_document') && (
                   <>
                     <label className="text-xs text-slate">Property / project</label>
@@ -119,14 +119,7 @@ export default async function InboxPage() {
                     />
                   </>
                 )}
-
-                <button
-                  type="submit"
-                  className="mt-1 self-start rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest"
-                >
-                  Confirm
-                </button>
-              </form>
+              </InboxConfirmForm>
             </li>
           ))}
         </ul>
