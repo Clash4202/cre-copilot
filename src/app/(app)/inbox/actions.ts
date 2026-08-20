@@ -13,6 +13,7 @@ import { proposeSectionMatch, type LibrarySummary } from '@/lib/section-match'
 import { extractPptxSlideText } from '@/lib/pptx-text'
 import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
 import { MAX_NAME_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/library-limits'
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB, matches existing Vault upload limit
 const MAX_STRUCTURE_SUMMARY_CHARS = 20_000 // caps prompt size for very large templates
@@ -47,12 +48,17 @@ async function loadLibrarySummaries(
   )
 }
 
-export async function stageInboxUpload(formData: FormData) {
+export async function stageInboxUpload(formData: FormData): Promise<{ error: string } | undefined> {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
+
+  // Checked before the file reaches storage, so a rejection leaves nothing behind to clean up.
+  if (!(await checkRateLimit(supabase, 'inbox_stage'))) {
+    return { error: rateLimitMessage('inbox_stage') }
+  }
 
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) throw new Error('No file provided')

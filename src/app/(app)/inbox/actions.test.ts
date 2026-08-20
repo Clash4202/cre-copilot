@@ -56,6 +56,20 @@ class FakeSupabase {
     }),
   }
 
+  // Rate limiting is a Postgres function in production. Tests default to allowing every call so
+  // existing behavior tests are unaffected; set rateLimitAllows = false to exercise a rejection.
+  rateLimitAllows = true
+
+  rpc = async (fn: string, args: Record<string, unknown>) => {
+    if (fn === 'check_rate_limit') {
+      this.rpcCalls.push(args)
+      return { data: this.rateLimitAllows, error: null }
+    }
+    throw new Error(`Unexpected rpc call: ${fn}`)
+  }
+
+  rpcCalls: Record<string, unknown>[] = []
+
   seed(table: string, rows: Row[]) {
     this.tables[table] = (this.tables[table] ?? []).concat(rows)
   }
@@ -409,6 +423,28 @@ describe('stageInboxUpload — file type allowlist', () => {
     expect(items).toHaveLength(1)
     expect(items[0].detected_type).toBe('general_document')
     expect(fake.objects.size).toBe(1)
+  })
+
+  it('refuses to stage an upload once the inbox limit is reached', async () => {
+    fake.rateLimitAllows = false
+    const formData = new FormData()
+    formData.set('file', new File(['%PDF-1.7'], 'offering-memo.pdf', { type: 'application/pdf' }))
+
+    const result = await stageInboxUpload(formData)
+
+    expect(result?.error).toMatch(/limit reached/i)
+    // Nothing reached storage and no item was created, so the user can retry cleanly later.
+    expect(fake.objects.size).toBe(0)
+    expect(fake.rows('inbox_items')).toHaveLength(0)
+  })
+
+  it('checks the inbox_stage bucket before doing any work', async () => {
+    const formData = new FormData()
+    formData.set('file', new File(['%PDF-1.7'], 'offering-memo.pdf', { type: 'application/pdf' }))
+
+    await stageInboxUpload(formData)
+
+    expect(fake.rpcCalls[0]).toMatchObject({ p_action: 'inbox_stage' })
   })
 })
 

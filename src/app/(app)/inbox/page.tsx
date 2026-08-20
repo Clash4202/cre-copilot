@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { stageInboxUpload, confirmInboxItem } from './actions'
+import { confirmInboxItem } from './actions'
+import { InboxUploadForm } from './inbox-upload-form'
 
 interface InboxItemRow {
   id: string
@@ -38,21 +39,7 @@ export default async function InboxPage() {
         </p>
       </div>
 
-      <form
-        action={stageInboxUpload}
-        className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8"
-      >
-        <input
-          type="file"
-          name="file"
-          accept=".xlsx,.pptx,.pdf,.txt"
-          required
-          className="flex-1 text-sm text-slate file:mr-3 file:rounded-md file:border file:border-hairline file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-ink hover:file:border-forest"
-        />
-        <button type="submit" className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest">
-          Upload
-        </button>
-      </form>
+      <InboxUploadForm />
 
       {items.length === 0 ? (
         <p className="text-sm text-slate">Nothing pending review.</p>
