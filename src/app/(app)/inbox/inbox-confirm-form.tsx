@@ -13,6 +13,7 @@ export function InboxConfirmForm({ itemId, children }: { itemId: string; childre
     <form
       action={(formData: FormData) => {
         startTransition(async () => {
+          setError(null)
           const result = await confirmInboxItem(itemId, formData)
           setError(result?.error ?? null)
         })

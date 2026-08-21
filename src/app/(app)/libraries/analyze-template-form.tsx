@@ -15,6 +15,7 @@ export function AnalyzeTemplateForm({ templateId }: { templateId: string }) {
     <form
       action={() => {
         startTransition(async () => {
+          setError(null)
           const result = await analyzeTemplate(templateId)
           setError(result?.error ?? null)
         })

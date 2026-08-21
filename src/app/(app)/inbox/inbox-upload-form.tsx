@@ -10,16 +10,17 @@ export function InboxUploadForm() {
   const [isPending, startTransition] = useTransition()
 
   return (
-    <div className="flex flex-col gap-2">
-      <form
-        action={(formData: FormData) => {
-          startTransition(async () => {
-            const result = await stageInboxUpload(formData)
-            setError(result?.error ?? null)
-          })
-        }}
-        className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8"
-      >
+    <form
+      action={(formData: FormData) => {
+        startTransition(async () => {
+          setError(null)
+          const result = await stageInboxUpload(formData)
+          setError(result?.error ?? null)
+        })
+      }}
+      className="flex flex-col gap-2"
+    >
+      <div className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8">
         <input
           type="file"
           name="file"
@@ -34,8 +35,8 @@ export function InboxUploadForm() {
         >
           {isPending ? 'Uploading...' : 'Upload'}
         </button>
-      </form>
+      </div>
       {error && <p className="text-sm text-brick">{error}</p>}
-    </div>
+    </form>
   )
 }
