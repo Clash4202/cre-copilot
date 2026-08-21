@@ -62,59 +62,63 @@ alter table rate_limit_events enable row level security;
 -- function below, so a user cannot read, insert into, or delete from it directly.
 ```
 
-The function takes an **action name, not a full bucket key**, and derives the identity itself:
+The function takes **only an action name**, and derives everything else itself:
 
 ```sql
-create function check_rate_limit(p_action text, p_limit int, p_window_seconds int)
+create function check_rate_limit(p_action text)
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
-declare
-  v_key text;
-  v_count int;
-begin
-  if auth.uid() is null then
-    return false;
-  end if;
-
-  v_key := p_action || ':' || auth.uid()::text;
-
-  delete from rate_limit_events
-    where bucket_key = v_key
-      and created_at < now() - make_interval(secs => p_window_seconds);
-
-  select count(*) into v_count
-    from rate_limit_events
-    where bucket_key = v_key;
-
-  if v_count >= p_limit then
-    return false;
-  end if;
-
-  insert into rate_limit_events (bucket_key) values (v_key);
-  return true;
-end;
+-- Full body in supabase/migrations/0007_rate_limits_hardening.sql. In outline:
+--   1. return false if auth.uid() is null
+--   2. v_key := p_action || ':' || auth.uid()   (uid MUST stay the suffix)
+--   3. pg_advisory_xact_lock(hashtext(v_key))
+--   4. case p_action -> v_limit, v_window_seconds; else return false
+--   5. delete this key's rows older than v_window_seconds  (housekeeping only)
+--   6. count this key's rows newer than v_window_seconds   (own time predicate)
+--   7. return false if v_count >= v_limit, else insert a row and return true
 $$;
 ```
+
+> **Revision, 2026-08-20.** This section originally specified
+> `check_rate_limit(p_action, p_limit, p_window_seconds)`, where the caller supplied the limit and
+> the window. The final whole-branch review found that exploitable and it was replaced before merge.
+> The original reasoning correctly established that a caller-supplied `p_limit` was harmless, then
+> wrongly generalized that to `p_window_seconds`. The two are not alike: `p_limit` only fed a
+> comparison, but `p_window_seconds` fed a `DELETE`, and the original `COUNT` had no time predicate
+> of its own, which made pruning the enforcement mechanism. Any signed-in user could call the RPC
+> directly with `p_window_seconds: 0`, empty their own bucket, and proceed, making all five limits
+> unenforceable. **The lesson worth carrying forward: "the caller cannot forge the key" is not the
+> same as "caller input is safe," and any argument that reaches a statement which mutates state
+> needs its own separate analysis.**
 
 **Why the identity is derived inside the function rather than passed in.** The server-side Supabase
 client runs as the `authenticated` role using the user's own session, so any signed-in user can call
 this RPC directly from outside the app with arbitrary arguments. If the function accepted a
 caller-supplied key, a user who knew another user's UUID could call it repeatedly with
 `ocr:<their-uuid>` and exhaust that person's allowance, locking them out. Deriving the key from
-`auth.uid()` makes that structurally impossible: a caller can only ever spend their own budget.
-Passing a large `p_limit` in a direct call is harmless for the same reason, since it cannot change
-what the app checks on the next real request.
+`auth.uid()` makes that structurally impossible: a caller can only ever spend their own budget. The
+ordering is load-bearing, and `auth.uid()` must stay the suffix: reversed, a crafted action string
+could land in someone else's bucket.
 
-`set search_path = public` is the standard hardening for a `security definer` function, preventing a
-shadowed table name from running under the definer's privileges.
+`p_action` is validated against the five known names, so a direct caller cannot invent a novel key
+whose rows nothing ever prunes.
 
-**Row growth.** Each call deletes its own key's expired rows before counting, so the table stays
-bounded at roughly (limit x active keys) rather than growing without limit. Rows belonging to a user
-who stops using the app linger until that user returns. A periodic sweep is a possible later
-addition and is not needed at this scale.
+`set search_path = public, pg_temp` is the hardening for a `security definer` function. Naming
+`pg_temp` explicitly matters, because Postgres searches it first when it is not listed, which would
+otherwise let a temp table shadow the real one under the definer's privileges.
+
+**Concurrency.** A `pg_advisory_xact_lock` on the bucket key serializes the count and the insert.
+Without it, under READ COMMITTED a burst of concurrent requests each counts zero and all pass,
+overshooting the limit by however many were in flight. On the `ocr` bucket each excess call is
+roughly 64k Claude tokens.
+
+**Row growth.** Each call deletes its own key's expired rows, so the table stays bounded at roughly
+(limit x active keys). Correctness does not depend on that delete: the count carries its own time
+predicate. Rows belonging to a user who stops using the app linger until that user returns. A
+periodic sweep is a possible later addition and is not needed at this scale.
 
 ### 2. Buckets and limits
 
@@ -136,15 +140,19 @@ charges the path that costs real money twice.
 ```typescript
 export async function checkRateLimit(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  action: RateLimitAction,
-  limit: number,
-  windowSeconds: number
+  action: RateLimitAction
 ): Promise<boolean>
 ```
 
-It calls the RPC and returns its boolean. A failed RPC call (network error, missing function)
-returns `false`, so a broken limiter refuses spend rather than allowing unlimited spend. The action
-names live in one exported union type so a typo cannot silently create a brand-new empty bucket.
+It calls the RPC with only `{ p_action: action }` and returns its boolean. A failed RPC call
+(network error, missing function) returns `false`, so a broken limiter refuses spend rather than
+allowing unlimited spend. The action names live in one exported union type so a typo cannot silently
+create a brand-new empty bucket.
+
+The limit and window numbers deliberately do **not** appear in TypeScript. They live only in
+`supabase/migrations/0007_rate_limits_hardening.sql`, which is the single source of truth. Keeping a
+second copy here would let the two drift, and passing them from the caller is what created the
+vulnerability described in section 1.
 
 The existing in-memory `checkRateLimit` is renamed to `checkInMemoryRateLimit` so the two are never
 confused at a call site, and its only remaining caller is the demo-request form in

@@ -17,6 +17,7 @@ import path from 'path'
 const SRC_DIR = path.resolve(__dirname, '../../../../src')
 const LIBRARIES_PAGE = path.resolve(__dirname, 'page.tsx')
 const ANALYZE_ACTION = path.resolve(__dirname, '../templates/actions.ts')
+const ANALYZE_TEMPLATE_FORM = path.resolve(__dirname, 'analyze-template-form.tsx')
 
 function collectSourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -27,19 +28,19 @@ function collectSourceFiles(dir: string): string[] {
 }
 
 describe('the /libraries page keeps a template out of a mapping dead end', () => {
-  it('invokes analyzeTemplate from at least one page, not just defining it', () => {
+  it('invokes analyzeTemplate from at least one UI component, not just defining it', () => {
     const callers = collectSourceFiles(SRC_DIR).filter(
       (file) => file !== ANALYZE_ACTION && readFileSync(file, 'utf8').includes('analyzeTemplate')
     )
 
     expect(callers).not.toHaveLength(0)
-    expect(callers).toContain(LIBRARIES_PAGE)
+    expect(callers).toContain(ANALYZE_TEMPLATE_FORM)
   })
 
   it('offers Analyze as well as Review mapping, gated on whether a mapping proposal exists', () => {
     const source = readFileSync(LIBRARIES_PAGE, 'utf8')
 
-    expect(source).toContain('analyzeTemplate.bind(')
+    expect(source).toContain('AnalyzeTemplateForm')
     expect(source).toMatch(/Analyze/)
     expect(source).toMatch(/Review mapping/)
     // The two must be alternatives, not both rendered unconditionally: a template with a proposal

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { createLibrary, createSection } from './actions'
-import { analyzeTemplate } from '@/app/(app)/templates/actions'
+import { AnalyzeTemplateForm } from './analyze-template-form'
 
 interface SectionRow {
   id: string
@@ -48,8 +48,8 @@ export default async function LibrariesPage({
     : libraries[0]
 
   let sections: SectionRow[] = []
-  let templatesBySectionId = new Map<string, TemplateFileRow[]>()
-  let bovsBySectionId = new Map<string, BovFileRow[]>()
+  const templatesBySectionId = new Map<string, TemplateFileRow[]>()
+  const bovsBySectionId = new Map<string, BovFileRow[]>()
 
   if (activeLibrary) {
     const { data: sectionsData } = await supabase
@@ -176,11 +176,7 @@ export default async function LibrariesPage({
                                 Review mapping →
                               </Link>
                             ) : (
-                              <form action={analyzeTemplate.bind(null, t.id)}>
-                                <button type="submit" className="font-mono text-xs uppercase tracking-widest text-wine hover:text-brick">
-                                  Analyze →
-                                </button>
-                              </form>
+                              <AnalyzeTemplateForm templateId={t.id} />
                             )}
                           </div>
                         </li>

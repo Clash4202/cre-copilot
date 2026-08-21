@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { stageInboxUpload, confirmInboxItem } from './actions'
+import { InboxUploadForm } from './inbox-upload-form'
+import { InboxConfirmForm } from './inbox-confirm-form'
 
 interface InboxItemRow {
   id: string
@@ -38,21 +39,7 @@ export default async function InboxPage() {
         </p>
       </div>
 
-      <form
-        action={stageInboxUpload}
-        className="flex items-center gap-2 rounded-md border border-dashed border-hairline px-6 py-8"
-      >
-        <input
-          type="file"
-          name="file"
-          accept=".xlsx,.pptx,.pdf,.txt"
-          required
-          className="flex-1 text-sm text-slate file:mr-3 file:rounded-md file:border file:border-hairline file:bg-paper file:px-3 file:py-1.5 file:text-sm file:text-ink hover:file:border-forest"
-        />
-        <button type="submit" className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest">
-          Upload
-        </button>
-      </form>
+      <InboxUploadForm />
 
       {items.length === 0 ? (
         <p className="text-sm text-slate">Nothing pending review.</p>
@@ -67,7 +54,7 @@ export default async function InboxPage() {
                 </span>
               </div>
 
-              <form action={confirmInboxItem.bind(null, item.id)} className="flex flex-col gap-2">
+              <InboxConfirmForm itemId={item.id}>
                 {(item.detected_type === 'property_document' || item.detected_type === 'general_document') && (
                   <>
                     <label className="text-xs text-slate">Property / project</label>
@@ -132,14 +119,7 @@ export default async function InboxPage() {
                     />
                   </>
                 )}
-
-                <button
-                  type="submit"
-                  className="mt-1 self-start rounded-md bg-ink px-4 py-2 text-sm font-medium text-paper transition-colors hover:bg-forest"
-                >
-                  Confirm
-                </button>
-              </form>
+              </InboxConfirmForm>
             </li>
           ))}
         </ul>

@@ -2,12 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { embedTexts } from '@/lib/voyage'
 import { askClaude } from '@/lib/claude'
-import { checkRateLimit } from '@/lib/rate-limit'
+import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit'
 import { buildCitations } from '@/lib/citations'
 
 const MAX_QUESTION_CHARS = 2000
-const RATE_LIMIT_MAX_REQUESTS = 20
-const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000 // 5 minutes
 
 interface ChunkMatch {
   id: string
@@ -25,8 +23,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
   }
 
-  if (!checkRateLimit(user.id, RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_MS)) {
-    return NextResponse.json({ error: 'Too many requests. Try again in a few minutes.' }, { status: 429 })
+  if (!(await checkRateLimit(supabase, 'chat'))) {
+    return NextResponse.json({ error: rateLimitMessage('chat') }, { status: 429 })
   }
 
   const { question, projectId } = await request.json()

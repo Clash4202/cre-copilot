@@ -16,12 +16,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       <header className="border-b border-hairline bg-paper/90 backdrop-blur-sm">
         <nav className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <a href="/projects" className="flex items-baseline gap-2">
+          <Link href="/projects" className="flex items-baseline gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-wine" aria-hidden="true" />
             <span className="font-display text-lg font-medium tracking-tight text-ink">
               cre-copilot
             </span>
-          </a>
+          </Link>
           <div className="flex items-center gap-6">
             <Link
               href="/inbox"

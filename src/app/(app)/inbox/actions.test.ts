@@ -20,6 +20,7 @@ vi.mock('@/lib/section-match', () => ({
 import { stageInboxUpload, confirmInboxItem } from './actions'
 import { proposeSectionMatch } from '@/lib/section-match'
 import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
+import { RateLimitError } from '@/lib/rate-limit'
 
 type Row = Record<string, unknown>
 
@@ -55,6 +56,20 @@ class FakeSupabase {
       },
     }),
   }
+
+  // Rate limiting is a Postgres function in production. Tests default to allowing every call so
+  // existing behavior tests are unaffected; set rateLimitAllows = false to exercise a rejection.
+  rateLimitAllows = true
+
+  rpc = async (fn: string, args: Record<string, unknown>) => {
+    if (fn === 'check_rate_limit') {
+      this.rpcCalls.push(args)
+      return { data: this.rateLimitAllows, error: null }
+    }
+    throw new Error(`Unexpected rpc call: ${fn}`)
+  }
+
+  rpcCalls: Record<string, unknown>[] = []
 
   seed(table: string, rows: Row[]) {
     this.tables[table] = (this.tables[table] ?? []).concat(rows)
@@ -335,6 +350,20 @@ describe('confirmInboxItem — the user can overrule the proposed destination', 
     expect(fake.rows('library_sections')).toHaveLength(1)
     expect(fake.rows('templates')).toHaveLength(0)
   })
+
+  it('does not charge the ingest budget for a template, which spends no AI money', async () => {
+    seedPendingTemplate()
+    fake.rateLimitAllows = false
+
+    // The candidate_template branch only copies a file and inserts rows; it never reaches
+    // ingestGeneralDocument, so a caller-supplied (fake) rate-limit rejection must not block it.
+    await confirmInboxItem('item-1', templateFormData())
+
+    expect(fake.rpcCalls).toHaveLength(0)
+    expect(fake.rows('templates')).toHaveLength(1)
+    const item = fake.rows('inbox_items').find((i) => i.id === 'item-1')
+    expect(item?.status).toBe('confirmed')
+  })
 })
 
 describe('confirmInboxItem — a failed ingestion cannot be retried into duplicate data', () => {
@@ -378,6 +407,37 @@ describe('confirmInboxItem — a failed ingestion cannot be retried into duplica
     expect(fake.rows('inbox_items')[0].status).toBe('confirmed')
     expect(fake.objects.has('inbox/user-1/staged-office-dcf.xlsx')).toBe(false)
   })
+
+  it('refuses to confirm a general document once the ingest limit is reached, leaving nothing half-built', async () => {
+    seedPendingGeneralDocument()
+    fake.rateLimitAllows = false
+
+    const result = await confirmInboxItem('item-doc', generalDocumentFormData())
+
+    expect(result?.error).toMatch(/limit reached/i)
+    expect(ingestGeneralDocument).not.toHaveBeenCalled()
+    expect(fake.rows('documents')).toHaveLength(0)
+    expect(fake.rows('project_documents')).toHaveLength(0)
+    const item = fake.rows('inbox_items').find((i) => i.id === 'item-doc')
+    expect(item?.status).toBe('pending_review')
+    expect(fake.objects.has('inbox/user-1/staged-offering-memo.pdf')).toBe(true)
+  })
+
+  it('returns the OCR rate-limit rejection as an error instead of throwing, so it reaches the confirm form', async () => {
+    seedPendingGeneralDocument()
+    vi.mocked(ingestGeneralDocument).mockRejectedValueOnce(
+      new RateLimitError('Scanned-document limit reached. Try again in about an hour.')
+    )
+
+    const result = await confirmInboxItem('item-doc', generalDocumentFormData())
+
+    expect(result?.error).toMatch(/scanned-document limit reached/i)
+    // The document and its project link still exist (ingestGeneralDocument's own catch already
+    // marks the document `failed` in production); only the OCR-specific rejection is surfaced here
+    // instead of thrown, matching every other rate-limit rejection in this file.
+    expect(fake.rows('documents')).toHaveLength(1)
+    expect(fake.rows('inbox_items')[0].status).toBe('confirmed')
+  })
 })
 
 describe('stageInboxUpload — file type allowlist', () => {
@@ -409,6 +469,28 @@ describe('stageInboxUpload — file type allowlist', () => {
     expect(items).toHaveLength(1)
     expect(items[0].detected_type).toBe('general_document')
     expect(fake.objects.size).toBe(1)
+  })
+
+  it('refuses to stage an upload once the inbox limit is reached', async () => {
+    fake.rateLimitAllows = false
+    const formData = new FormData()
+    formData.set('file', new File(['%PDF-1.7'], 'offering-memo.pdf', { type: 'application/pdf' }))
+
+    const result = await stageInboxUpload(formData)
+
+    expect(result?.error).toMatch(/limit reached/i)
+    // Nothing reached storage and no item was created, so the user can retry cleanly later.
+    expect(fake.objects.size).toBe(0)
+    expect(fake.rows('inbox_items')).toHaveLength(0)
+  })
+
+  it('checks the inbox_stage bucket before doing any work', async () => {
+    const formData = new FormData()
+    formData.set('file', new File(['%PDF-1.7'], 'offering-memo.pdf', { type: 'application/pdf' }))
+
+    await stageInboxUpload(formData)
+
+    expect(fake.rpcCalls[0]).toMatchObject({ p_action: 'inbox_stage' })
   })
 })
 
