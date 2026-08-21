@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import ExcelJS from 'exceljs'
 import { createClient } from '@/lib/supabase/server'
-import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit'
+import { checkRateLimit, rateLimitMessage, RateLimitError } from '@/lib/rate-limit'
 import { extractTextFromFile, extractPdfPages, isPageScanned, spliceOcrPages } from '@/lib/parse'
 import { exceedsOcrLimits, transcribeScannedPdf } from '@/lib/ocr'
 import { chunkText } from '@/lib/chunk'
@@ -50,9 +50,12 @@ export async function ingestGeneralDocument(
         // Whether a PDF needs OCR is only knowable after parsing it, so this check necessarily runs
         // mid-ingestion. A rejection here lands the document in `failed` through the catch below and
         // the user re-uploads to retry. A proper resume path would need a `pending_ocr` state and is
-        // deliberately out of scope (see the design spec, "Known rough edge").
+        // deliberately out of scope (see the design spec, "Known rough edge"). Thrown as
+        // RateLimitError (rather than a plain Error) so a caller reached from a Server Action, where
+        // production strips thrown-error text down to an opaque digest, can recognize this specific
+        // rejection and surface it to the user instead of letting it disappear.
         if (!(await checkRateLimit(supabase, 'ocr'))) {
-          throw new Error(rateLimitMessage('ocr'))
+          throw new RateLimitError(rateLimitMessage('ocr'))
         }
         const ocrPages = await transcribeScannedPdf(arrayBuffer, pages.length)
         const splicedPages = spliceOcrPages(pages, ocrPages)
@@ -118,13 +121,6 @@ export async function uploadDocument(projectId: string, formData: FormData) {
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // No UI renders this action any more (uploads go through the Inbox), but it is still a live
-  // server-action endpoint, so it gets the same ingestion budget as the Inbox path. It throws
-  // rather than returning a message because there is no form here to display one.
-  if (!(await checkRateLimit(supabase, 'ingest'))) {
-    throw new Error(rateLimitMessage('ingest'))
-  }
-
   const file = formData.get('file')
   if (!(file instanceof File) || file.size === 0) {
     throw new Error('No file provided')
@@ -139,6 +135,16 @@ export async function uploadDocument(projectId: string, formData: FormData) {
     file.name.toLowerCase().endsWith('.xlsx')
   if (!isPdf && !isText && !isXlsx) {
     throw new Error('Only PDF, plain text, and .xlsx files are supported')
+  }
+
+  // Only the non-.xlsx path below reaches ingestGeneralDocument (Voyage embeddings, and OCR if the
+  // PDF is scanned); the .xlsx branch parses locally with ExcelJS and spends nothing. So this is
+  // checked only for the path that actually spends, and before anything is written, so a rejection
+  // leaves nothing half-built. No UI renders this action any more (uploads go through the Inbox),
+  // but it is still a live server-action endpoint, so it gets the same ingestion budget as the Inbox
+  // path. It throws rather than returning a message because there is no form here to display one.
+  if (!isXlsx && !(await checkRateLimit(supabase, 'ingest'))) {
+    throw new Error(rateLimitMessage('ingest'))
   }
 
   const safeName = sanitizeFilename(file.name)

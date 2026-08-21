@@ -13,7 +13,7 @@ import { proposeSectionMatch, type LibrarySummary } from '@/lib/section-match'
 import { extractPptxSlideText } from '@/lib/pptx-text'
 import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
 import { MAX_NAME_CHARS, MAX_DESCRIPTION_CHARS } from '@/lib/library-limits'
-import { checkRateLimit, rateLimitMessage } from '@/lib/rate-limit'
+import { checkRateLimit, rateLimitMessage, RateLimitError } from '@/lib/rate-limit'
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50MB, matches existing Vault upload limit
 const MAX_STRUCTURE_SUMMARY_CHARS = 20_000 // caps prompt size for very large templates
@@ -210,13 +210,6 @@ export async function confirmInboxItem(
   } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // Confirming files the document and immediately ingests it (embeddings, and OCR if the PDF is
-  // scanned). Checked before any rows are created so a rejection leaves the item pending rather
-  // than half-filed.
-  if (!(await checkRateLimit(supabase, 'ingest'))) {
-    return { error: rateLimitMessage('ingest') }
-  }
-
   const { data: item } = await supabase
     .from('inbox_items')
     .select('id, user_id, file_name, storage_path, detected_type')
@@ -368,6 +361,14 @@ export async function confirmInboxItem(
 
     await closeOutInboxItem(supabase, itemId, item.storage_path)
   } else {
+    // Only this branch reaches an AI vendor (ingestGeneralDocument: Voyage embeddings, and OCR if
+    // the PDF is scanned) — property_document and candidate_template/candidate_bov above copy files
+    // and insert rows at zero vendor cost. So this is checked only here, and before any row in this
+    // branch is created, so a rejection leaves nothing half-built and the item stays pending_review.
+    if (!(await checkRateLimit(supabase, 'ingest'))) {
+      return { error: rateLimitMessage('ingest') }
+    }
+
     const propertyName = formData.get('propertyName')
     const existingProjectId = formData.get('existingProjectId')
     if (typeof propertyName !== 'string' || !propertyName.trim()) {
@@ -419,9 +420,26 @@ export async function confirmInboxItem(
     // communicate — while leaving it open would let a retry duplicate everything above.
     await closeOutInboxItem(supabase, itemId, item.storage_path)
 
-    await ingestGeneralDocument(supabase, newDocument.id, destinationPath, item.file_name)
+    try {
+      await ingestGeneralDocument(supabase, newDocument.id, destinationPath, item.file_name)
+    } catch (err) {
+      // confirmInboxItem is reached from a Server Action, where production strips a thrown error
+      // down to an opaque digest. Every other ingestion failure keeps throwing exactly as before
+      // (the document already carries the reason in its own `failed` status column), but the OCR
+      // rate-limit rejection is an expected, actionable condition, so it comes back as a return
+      // value instead, the same way every other rate-limit rejection in this file does.
+      if (err instanceof RateLimitError) {
+        revalidateInboxPaths()
+        return { error: err.message }
+      }
+      throw err
+    }
   }
 
+  revalidateInboxPaths()
+}
+
+function revalidateInboxPaths() {
   revalidatePath('/inbox')
   revalidatePath('/libraries')
   revalidatePath('/projects')

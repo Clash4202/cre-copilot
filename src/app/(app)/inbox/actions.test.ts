@@ -20,6 +20,7 @@ vi.mock('@/lib/section-match', () => ({
 import { stageInboxUpload, confirmInboxItem } from './actions'
 import { proposeSectionMatch } from '@/lib/section-match'
 import { ingestGeneralDocument } from '@/app/(app)/projects/[projectId]/vault/actions'
+import { RateLimitError } from '@/lib/rate-limit'
 
 type Row = Record<string, unknown>
 
@@ -350,18 +351,18 @@ describe('confirmInboxItem — the user can overrule the proposed destination', 
     expect(fake.rows('templates')).toHaveLength(0)
   })
 
-  it('refuses to confirm an item once the ingestion limit is reached', async () => {
+  it('does not charge the ingest budget for a template, which spends no AI money', async () => {
     seedPendingTemplate()
     fake.rateLimitAllows = false
 
-    const result = await confirmInboxItem('item-1', templateFormData())
+    // The candidate_template branch only copies a file and inserts rows; it never reaches
+    // ingestGeneralDocument, so a caller-supplied (fake) rate-limit rejection must not block it.
+    await confirmInboxItem('item-1', templateFormData())
 
-    expect(result?.error).toMatch(/limit reached/i)
-    // seedPendingTemplate already seeds one library (lib-1); nothing new was filed, so the count
-    // stays at 1 rather than growing, and the user can confirm it later.
-    expect(fake.rows('libraries')).toHaveLength(1)
+    expect(fake.rpcCalls).toHaveLength(0)
+    expect(fake.rows('templates')).toHaveLength(1)
     const item = fake.rows('inbox_items').find((i) => i.id === 'item-1')
-    expect(item?.status).toBe('pending_review')
+    expect(item?.status).toBe('confirmed')
   })
 })
 
@@ -405,6 +406,37 @@ describe('confirmInboxItem — a failed ingestion cannot be retried into duplica
 
     expect(fake.rows('inbox_items')[0].status).toBe('confirmed')
     expect(fake.objects.has('inbox/user-1/staged-office-dcf.xlsx')).toBe(false)
+  })
+
+  it('refuses to confirm a general document once the ingest limit is reached, leaving nothing half-built', async () => {
+    seedPendingGeneralDocument()
+    fake.rateLimitAllows = false
+
+    const result = await confirmInboxItem('item-doc', generalDocumentFormData())
+
+    expect(result?.error).toMatch(/limit reached/i)
+    expect(ingestGeneralDocument).not.toHaveBeenCalled()
+    expect(fake.rows('documents')).toHaveLength(0)
+    expect(fake.rows('project_documents')).toHaveLength(0)
+    const item = fake.rows('inbox_items').find((i) => i.id === 'item-doc')
+    expect(item?.status).toBe('pending_review')
+    expect(fake.objects.has('inbox/user-1/staged-offering-memo.pdf')).toBe(true)
+  })
+
+  it('returns the OCR rate-limit rejection as an error instead of throwing, so it reaches the confirm form', async () => {
+    seedPendingGeneralDocument()
+    vi.mocked(ingestGeneralDocument).mockRejectedValueOnce(
+      new RateLimitError('Scanned-document limit reached. Try again in about an hour.')
+    )
+
+    const result = await confirmInboxItem('item-doc', generalDocumentFormData())
+
+    expect(result?.error).toMatch(/scanned-document limit reached/i)
+    // The document and its project link still exist (ingestGeneralDocument's own catch already
+    // marks the document `failed` in production); only the OCR-specific rejection is surfaced here
+    // instead of thrown, matching every other rate-limit rejection in this file.
+    expect(fake.rows('documents')).toHaveLength(1)
+    expect(fake.rows('inbox_items')[0].status).toBe('confirmed')
   })
 })
 
