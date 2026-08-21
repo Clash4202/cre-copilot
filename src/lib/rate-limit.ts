@@ -3,20 +3,17 @@ import type { createClient } from '@/lib/supabase/server'
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>
 
 // Every path that spends money on an AI vendor gets its own bucket, so a runaway in one cannot
-// starve the others. Limits are per user, enforced in Postgres (see 0006_rate_limits.sql).
+// starve the others. Limits are per user, enforced in Postgres. The limit and window numbers for
+// each action are NOT duplicated here: they live in supabase/migrations/0007_rate_limits_hardening.sql,
+// which is the single source of truth (check_rate_limit(p_action) looks them up itself, so a
+// caller-supplied limit or window can never affect enforcement). Keeping a second copy in
+// TypeScript would let the two silently drift.
 export type RateLimitAction = 'inbox_stage' | 'ingest' | 'ocr' | 'template_analyze' | 'chat'
 
-export const RATE_LIMITS: Record<RateLimitAction, { limit: number; windowSeconds: number }> = {
-  // Two small Claude calls per file. Generous so bulk-uploading a folder still works.
-  inbox_stage: { limit: 30, windowSeconds: 3600 },
-  // Voyage embeddings, up to MAX_CHUNKS_PER_DOCUMENT chunks per document.
-  ingest: { limit: 20, windowSeconds: 3600 },
-  // The expensive one: roughly 64k Claude tokens per scanned PDF.
-  ocr: { limit: 10, windowSeconds: 3600 },
-  // One large Claude call over a whole workbook structure summary.
-  template_analyze: { limit: 10, windowSeconds: 3600 },
-  chat: { limit: 20, windowSeconds: 300 },
-}
+// Thrown by an AI-spend call site when its own rate-limit check has already failed, so the caller
+// can distinguish "expected rejection, show the user" from every other failure that should keep
+// propagating as a generic error.
+export class RateLimitError extends Error {}
 
 const MESSAGES: Record<RateLimitAction, string> = {
   inbox_stage: 'Upload limit reached. Try again in about an hour.',
@@ -36,12 +33,8 @@ export async function checkRateLimit(
   supabase: SupabaseServerClient,
   action: RateLimitAction
 ): Promise<boolean> {
-  const { limit, windowSeconds } = RATE_LIMITS[action]
-
   const { data, error } = await supabase.rpc('check_rate_limit', {
     p_action: action,
-    p_limit: limit,
-    p_window_seconds: windowSeconds,
   })
 
   if (error) {

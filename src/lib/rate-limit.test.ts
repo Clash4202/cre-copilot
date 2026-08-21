@@ -1,39 +1,32 @@
 import { describe, it, expect, vi } from 'vitest'
-import { checkRateLimit, checkInMemoryRateLimit, rateLimitMessage, RATE_LIMITS } from './rate-limit'
+import { checkRateLimit, checkInMemoryRateLimit, rateLimitMessage } from './rate-limit'
 
 type RpcResult = { data: unknown; error: unknown }
 
 // The wrapper's whole job is translating an action name into the right RPC call and translating the
 // result back into a boolean, so a hand-rolled stub that records its arguments is exactly the right
-// level of fidelity here. The counting itself is SQL and is verified live in Task 8.
+// level of fidelity here. The counting itself, and the limit/window for each action, is SQL and is
+// verified live in Task 8 (see supabase/migrations/0007_rate_limits_hardening.sql).
 function fakeSupabase(result: RpcResult) {
   const rpc = vi.fn(async () => result)
   return { client: { rpc } as unknown as Parameters<typeof checkRateLimit>[0], rpc }
 }
 
 describe('checkRateLimit', () => {
-  it('calls the RPC with the action name and that action\'s configured limits', async () => {
+  it('calls the RPC with only the action name, nothing that could affect enforcement', async () => {
     const { client, rpc } = fakeSupabase({ data: true, error: null })
 
     await checkRateLimit(client, 'ocr')
 
-    expect(rpc).toHaveBeenCalledWith('check_rate_limit', {
-      p_action: 'ocr',
-      p_limit: 10,
-      p_window_seconds: 3600,
-    })
+    expect(rpc).toHaveBeenCalledWith('check_rate_limit', { p_action: 'ocr' })
   })
 
-  it('sends the chat bucket its own shorter window', async () => {
+  it('passes each action name through unchanged', async () => {
     const { client, rpc } = fakeSupabase({ data: true, error: null })
 
     await checkRateLimit(client, 'chat')
 
-    expect(rpc).toHaveBeenCalledWith('check_rate_limit', {
-      p_action: 'chat',
-      p_limit: 20,
-      p_window_seconds: 300,
-    })
+    expect(rpc).toHaveBeenCalledWith('check_rate_limit', { p_action: 'chat' })
   })
 
   it('allows the action when the function returns true', async () => {
@@ -54,15 +47,6 @@ describe('checkRateLimit', () => {
   it('fails closed when the RPC returns something that is not a boolean', async () => {
     const { client } = fakeSupabase({ data: null, error: null })
     expect(await checkRateLimit(client, 'template_analyze')).toBe(false)
-  })
-})
-
-describe('RATE_LIMITS', () => {
-  it('has an entry for every action, and every limit is a positive number', () => {
-    for (const [action, config] of Object.entries(RATE_LIMITS)) {
-      expect(config.limit, action).toBeGreaterThan(0)
-      expect(config.windowSeconds, action).toBeGreaterThan(0)
-    }
   })
 })
 
